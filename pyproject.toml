@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "falsify"
+name = "falsify-quant"
 version = "0.1.0"
 description = "Prove your trading strategy is nothing, before the market does."
 readme = "README.md"
@@ -44,9 +44,9 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.urls]
-Homepage = "https://github.com/josephlangstroth/falsify"
-Source = "https://github.com/josephlangstroth/falsify"
-Issues = "https://github.com/josephlangstroth/falsify/issues"
+Homepage = "https://github.com/falsify/falsify"
+Source = "https://github.com/falsify/falsify"
+Issues = "https://github.com/falsify/falsify/issues"
 
 [project.scripts]
 falsify = "falsify.cli:main"

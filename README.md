@@ -1,7 +1,7 @@
 # falsify
 
-[![tests](https://github.com/josephlangstroth/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/josephlangstroth/falsify/actions/workflows/ci.yml)
-[![python](https://img.shields.io/pypi/pyversions/falsify)](https://pypi.org/project/falsify/)
+[![tests](https://github.com/falsify/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/falsify/falsify/actions/workflows/ci.yml)
+[![python](https://img.shields.io/pypi/pyversions/falsify-quant)](https://pypi.org/project/falsify-quant/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 **Every backtesting tool helps you search for parameters that look good. This one assumes you already did that, and tries to prove what you found is an artifact of the search.**
@@ -35,7 +35,7 @@ A tool that scores a submitted equity curve cannot deflate anything, because the
 ## Install
 
 ```bash
-pip install falsify
+pip install falsify-quant
 ```
 
 numpy and scipy. Nothing else — no pandas, no build step, no account.
@@ -43,7 +43,7 @@ numpy and scipy. Nothing else — no pandas, no build step, no account.
 From source:
 
 ```bash
-git clone https://github.com/josephlangstroth/falsify && cd falsify
+git clone https://github.com/falsify/falsify && cd falsify
 pip install -e ".[dev]"
 ```
 
@@ -82,7 +82,7 @@ Data loaders need no API keys — Coinbase public candles for crypto, Yahoo for 
 
 ## The prosecution
 
-Six independent attempts to kill the strategy, roughly in the order they land.
+Seven independent attempts to kill the strategy, roughly in the order they land.
 
 ### 1. Causality — the only test that finds bugs rather than weaknesses
 
@@ -122,7 +122,7 @@ The test people find hardest to argue with, because it makes no assumption about
 
 Two nulls, and the choice matters. `--null iid` destroys all serial structure, isolating the search. `--null block` preserves volatility clustering and short-horizon autocorrelation — strictly harder. A strategy whose entire edge *is* lag-1 autocorrelation passes the first and fails the second, and both facts are worth knowing.
 
-### 7. Universe selection — the search you ran before you wrote the grid
+### 6. Universe selection — the search you ran before you wrote the grid
 
 Every test above takes the asset as given. That's a large blind spot, because choosing *what to trade* is itself a search, usually bigger than the parameter sweep and almost never documented.
 
@@ -139,7 +139,7 @@ Sweeps the whole candidate universe at the **same** shipped parameters, then ask
 
 Two honest limits. The test measures whether the chosen assets were unusually good — not *why* they were chosen; a defensible non-return prior (liquidity, market cap) is a real answer. And it assumes the universe was searched. If you genuinely picked on day one and never looked at the rest, the deflation doesn't apply — though it's worth asking whether you'd have tried the second asset if the first had failed.
 
-### 6. Regime spread
+### 7. Regime spread
 
 Whether the P&L is spread across time or is one lucky quarter, plus the handful of bars carrying the entire result.
 
