@@ -1,0 +1,59 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.12", "3.13"]
+        exclude:
+          # One representative Python per non-Linux runner keeps the matrix honest
+          # without paying for nine jobs to prove the same thing.
+          - { os: windows-latest, python-version: "3.10" }
+          - { os: windows-latest, python-version: "3.13" }
+          - { os: macos-latest, python-version: "3.10" }
+          - { os: macos-latest, python-version: "3.13" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Unit tests — is the arithmetic right?
+        run: pytest -q
+
+      # The known-answer suite is the one that matters most. It asserts that a strategy
+      # fit to pure noise scores near zero, that two flavours of lookahead are caught,
+      # and — the case that actually constrains the design — that a genuine edge is NOT
+      # called overfitting. A tool that answers "overfit" to everything would pass a
+      # green unit suite while being worthless.
+      - name: Known-answer suite — does it measure anything?
+        run: python selftest.py
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*

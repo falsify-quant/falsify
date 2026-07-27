@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+reports/
+falsify-report.html
+
+# Local working data — market caches and read-only snapshots of live trading
+# databases. Never commit these: the bot databases contain real account activity.
+_cache/
+_live/
+*.db
+*.db-shm
+*.db-wal
+
+# Live strategy ports and their runners. These encode real trading parameters,
+# traded instruments, position sizing and database paths for money that is actually
+# at risk. The library is public; what you point it at is not.
+private/
+
