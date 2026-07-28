@@ -1,7 +1,13 @@
-# Pre-launch checklist
+# Launch record
 
-Deferred decisions, recorded so they do not get lost between now and going public.
-Nothing here blocks development; all of it blocks the first public link.
+**Shipped 2026-07-28.** `pip install falsify-quant` — v0.1.0 on PyPI, repository public at
+`github.com/falsify-quant/falsify`. Everything below is closed; it is kept as the record of
+what the decisions were and why, because most of them are the kind that look arbitrary a
+year later.
+
+Verified after the upload, from a clean virtualenv with no access to this working copy:
+the package installs from PyPI, all three commands respond, and a strategy fit to pure
+noise scores 0.3 / 100 — which is the whole claim the library makes about itself.
 
 ## Namespace
 
@@ -43,9 +49,9 @@ console_scripts    falsify       = falsify_prml:main
 Distribution names do not reserve module names, so nothing prevents shipping ours — the
 question is whether to. Unresolved; see "The import-name decision" below.
 
-- [ ] **Create the pending publisher on PyPI** — Account → Publishing → *Add a new pending
-      publisher*. It is "pending" because the project does not exist yet; PyPI creates it
-      on the first successful upload. Exact values:
+- [x] **Create the pending publisher on PyPI** — Account → Publishing → *Add a new pending
+      publisher*. It was "pending" because the project did not exist yet; PyPI promoted it
+      to a real publisher on the first successful upload. The values that worked:
 
       | Field | Value |
       |---|---|
