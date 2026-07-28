@@ -236,3 +236,97 @@ def test_finding_fails_closed_on_nan():
     assert Finding("x", "X", float("nan"), "").score == 0.0
     assert Finding("x", "X", 2.5, "").score == 1.0
     assert Finding("x", "X", -3.0, "").score == 0.0
+
+
+# ----------------------------------------------------------------------------------
+# Regime spread
+# ----------------------------------------------------------------------------------
+
+
+def _regime(net: np.ndarray):
+    return check_regime(make_sweep(net.reshape(-1, 1)), 0)
+
+
+def test_regime_concentration_does_not_secretly_measure_sharpe():
+    """The property the first version got wrong, and the reason it had to change.
+
+    `top 1% of bars / total P&L` looks like a test of lumpiness. It is not. The numerator
+    is set by the noise and the denominator by the edge, so for any iid series the ratio
+    is roughly one over the signal-to-noise -- a weak-but-honest edge scores identically
+    to a pathologically lumpy one, and against a fixed cutoff the weak one fails purely
+    for being weak. Deflation already charges for that; charging twice, inside a geometric
+    mean, dragged every verdict down by a near-constant factor.
+
+    So: three iid series, same shape, Sharpe an order of magnitude apart. All three have
+    profit arriving exactly as evenly as chance allows, and all three must be told so.
+    """
+    rng = np.random.default_rng(7)
+    noise = rng.standard_normal(6000)
+
+    scores, raw_shares = [], []
+    for mu in (0.0006, 0.002, 0.006):  # roughly 0.6, 1.9 and 5.7 annualised Sharpe
+        f = _regime(mu + 0.02 * noise)
+        scores.append(f.score)
+        raw_shares.append(f.detail["top1pct_pnl_share"])
+        assert f.detail["excess_concentration"] == pytest.approx(1.0, abs=0.25)
+
+    # The raw share spans an order of magnitude across the three...
+    assert max(raw_shares) / min(raw_shares) > 8
+    # ... and the calibrated score does not move.
+    assert max(scores) - min(scores) < 0.1
+    assert min(scores) > 0.7
+
+
+def test_regime_still_catches_profit_carried_by_a_handful_of_bars():
+    """The concern is real even though the old statistic could not isolate it."""
+    rng = np.random.default_rng(3)
+    net = -0.0004 + 0.004 * rng.standard_normal(6000)
+    net[::600] += 0.35  # ten bars carry the entire result
+
+    f = _regime(net)
+    assert np.sum(net) > 0
+    assert f.detail["excess_concentration"] > 3.0
+    assert f.score < 0.25
+    assert "carry" in f.headline
+
+
+def test_regime_catches_a_strategy_that_only_worked_once():
+    """One regime, not an edge — the leg that was always doing the real work."""
+    net = np.full(6000, -0.00005)
+    net[:1000] = 0.002  # profitable in the first period and nowhere else
+
+    f = _regime(net)
+    assert f.detail["periods_profitable"] == 1
+    assert f.score < 0.45
+    assert "one regime" in f.headline.lower()
+
+
+def test_regime_rewards_an_edge_that_shows_up_in_every_period():
+    rng = np.random.default_rng(11)
+    f = _regime(0.0015 + 0.01 * rng.standard_normal(6000))
+    assert f.detail["periods_profitable"] == 6
+    assert f.score > 0.85
+
+
+def test_regime_fails_closed_on_a_losing_strategy():
+    """No P&L means no P&L to be spread out. Uncomputable must not read as passed."""
+    rng = np.random.default_rng(5)
+    f = _regime(-0.0005 + 0.005 * rng.standard_normal(3000))
+    assert np.sum(f.detail["chunks"][0]["total_return"]) < 1  # sanity: it does lose
+    assert f.score < 0.05
+    assert np.isinf(f.detail["top1pct_pnl_share"])
+
+
+def test_regime_reports_the_calibration_in_the_headline():
+    """A reader has to be able to tell 'lumpy' from 'ordinary' without reading the source."""
+    rng = np.random.default_rng(2)
+    f = _regime(0.001 + 0.01 * rng.standard_normal(4000))
+    assert "what this return distribution alone would give" in f.headline
+
+
+def test_regime_score_is_bounded_and_finite_on_pathological_input():
+    for net in (np.zeros(3000),
+                np.full(3000, 1e-12),
+                np.concatenate([np.zeros(2999), [1.0]])):
+        f = _regime(net)
+        assert 0.0 <= f.score <= 1.0 and np.isfinite(f.score)

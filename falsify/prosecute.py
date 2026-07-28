@@ -22,6 +22,7 @@ from itertools import combinations
 from typing import Any
 
 import numpy as np
+from scipy.stats import norm as _norm
 
 from .harness import Sweep, sweep as run_sweep
 from .sim import simulate
@@ -649,6 +650,33 @@ def check_permutation(
 # --------------------------------------------------------------------------------------
 
 
+def _bulk_scale(net: np.ndarray, min_active: int = 30) -> float:
+    """A scale estimate for the body of the return distribution, not its tails.
+
+    The concentration benchmark asks what share of P&L the top bars would carry if the
+    series were ordinary. Estimating "ordinary" with the sample standard deviation lets
+    the outliers set their own benchmark: ten bars carrying a decade of profit inflate the
+    variance, which inflates the expected share, which hides the ten bars. Testing for
+    outliers with a statistic they contaminate is the standard version of this mistake.
+
+    So the scale comes from the median absolute deviation, which the tails cannot move,
+    rescaled by 1.4826 to match the standard deviation of a normal.
+
+    Bars where the strategy was flat are excluded first. A rule that is out of the market
+    four days in five has a median absolute deviation of exactly zero, and its scale would
+    otherwise be estimated as "no variation at all" from the bars where, by construction,
+    nothing could have happened.
+    """
+    active = net[net != 0.0]
+    if len(active) < min_active:
+        sd = float(np.std(net, ddof=1)) if len(net) > 1 else 0.0
+        return sd
+    mad = float(np.median(np.abs(active - np.median(active))))
+    if mad > 0:
+        return 1.4826 * mad
+    return float(np.std(active, ddof=1)) if len(active) > 1 else 0.0
+
+
 def check_regime(sweep_: Sweep, index: int, *, n_chunks: int = 6) -> Finding:
     """Split the history into contiguous periods and look for a strategy that only ever
     worked once, plus the handful of bars carrying the entire result."""
@@ -671,20 +699,57 @@ def check_regime(sweep_: Sweep, index: int, *, n_chunks: int = 6) -> Finding:
     consistency = positive / n_chunks
 
     total = float(np.sum(net))
+    top_n = max(1, int(0.01 * T))
     if total > 0:
-        top_n = max(1, int(0.01 * T))
         top_sum = float(np.sum(np.sort(net)[-top_n:]))
         concentration = top_sum / total
     else:
-        top_n, concentration = max(1, int(0.01 * T)), math.inf
+        concentration = math.inf
+
+    # How concentrated *should* the P&L be? Comparing the raw share against a fixed
+    # threshold looks like a test of lumpiness and is really a test of Sharpe wearing a
+    # disguise: the numerator is set by the noise and the denominator by the edge, so the
+    # ratio is roughly one over the signal-to-noise no matter how evenly the profit
+    # arrived. Run at scale that showed up immediately -- against a 1.5 cutoff the leg
+    # failed nine cells in ten, and since the verdict is a geometric mean it was pulling
+    # every score down by a near-constant factor while looking like a finding.
+    #
+    # The scale-free question is whether the concentration exceeds what an ordinary series
+    # with this mean and this variance would produce anyway. For T iid draws from
+    # N(mu, sd), the expected sum of the top q-fraction is k*mu + T*sd*phi(z), with
+    # z = Phi^-1(1-q) -- so the expected share divides that by T*mu. Coming in at the
+    # expected share means the profit arrived exactly as unremarkably as noise would
+    # deliver it, which is the honest null. Genuine lumpiness -- one trade carrying a
+    # decade -- still lands far above it.
+    expected = math.inf
+    if total > 0 and T > 1:
+        mu = float(np.mean(net))
+        sd = _bulk_scale(net)
+        if mu > 0 and sd > 0:
+            q = top_n / T
+            z = float(_norm.isf(q))
+            expected = (top_n * mu + T * sd * float(_norm.pdf(z))) / (T * mu)
+
+    if math.isfinite(concentration) and math.isfinite(expected) and expected > 0:
+        excess = concentration / expected
+        # Fat tails are normal in returns, so the band is wide: at one and a half times
+        # the null nothing is said, and it takes four times before the leg is failed
+        # outright.
+        conc_score = float(np.clip((4.0 - excess) / 2.5, 0.0, 1.0))
+    else:
+        excess = math.inf
+        conc_score = 0.0
 
     # Both legs matter: consistent across periods, and not carried by a few bars.
-    conc_score = float(np.clip(1.5 - concentration, 0.0, 1.0)) if math.isfinite(concentration) else 0.0
     score = float(np.sqrt(max(consistency, 1e-6) * max(conc_score, 1e-6)))
 
     bits = [f"Profitable in {positive}/{n_chunks} periods"]
     if math.isfinite(concentration):
-        bits.append(f"the best 1% of bars ({top_n}) carry {concentration:.0%} of all P&L")
+        bits.append(
+            f"the best 1% of bars ({top_n}) carry {concentration:.0%} of all P&L"
+            + (f", {excess:.1f}x what this return distribution alone would give"
+               if math.isfinite(excess) else "")
+        )
     headline = "; ".join(bits) + "."
 
     if consistency <= 0.5:
@@ -714,6 +779,8 @@ def check_regime(sweep_: Sweep, index: int, *, n_chunks: int = 6) -> Finding:
             "periods_profitable": positive,
             "n_periods": n_chunks,
             "top1pct_pnl_share": concentration,
+            "expected_top1pct_share": expected,
+            "excess_concentration": excess,
             "chunks": chunks,
             "max_drawdown": max_drawdown(net),
         },
