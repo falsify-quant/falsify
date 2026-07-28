@@ -11,6 +11,23 @@ Not by agreeing with you. By spending seven separate attempts trying to prove it
 
 ```bash
 pip install falsify-quant
+falsify-quant --demo
+```
+
+That scores three strategies you didn't write, on prices that don't exist, in a few
+seconds — no network, no data feed, nothing to write first. A real edge survives, the
+same rule on noise dies, and a version of it that peeks one bar into the future is
+caught outright:
+
+```
+ 95.4/100  SURVIVED         A genuine edge
+  1.5/100  NO EDGE FOUND    The same rule on noise
+  0.0/100  BROKEN           A rule that peeks one bar ahead
+```
+
+Then point it at your own:
+
+```bash
 falsify-quant mystrategy.py --symbol SPY --market equity
 ```
 

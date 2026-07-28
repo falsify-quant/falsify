@@ -1,14 +1,20 @@
 """Command line entry point.
 
-    python -m falsify mystrategy.py --symbol BTC-USD --market crypto-perp
-    python -m falsify mystrategy.py --symbol AAPL   --market equity
-    python -m falsify mystrategy.py --csv prices.csv --market crypto-spot
+Nothing to write and nothing to download -- see what a verdict looks like first:
+
+    falsify-quant --demo
+
+Then on your own strategy:
+
+    falsify-quant mystrategy.py --symbol BTC-USD --market crypto-perp
+    falsify-quant mystrategy.py --symbol AAPL   --market equity
+    falsify-quant mystrategy.py --csv prices.csv --market crypto-spot
 
 Add `--attest` to write a tamper-evident copy of the verdict alongside the report, and
 `--verify FILE` to check one somebody sent you:
 
-    python -m falsify mystrategy.py --symbol AAPL --attest
-    python -m falsify --verify their-verdict.json
+    falsify-quant mystrategy.py --symbol AAPL --attest
+    falsify-quant --verify their-verdict.json
 
 Your strategy file needs two names at module level:
 
@@ -169,6 +175,44 @@ def _verify(path: Path) -> int:
     return 0 if result.ok else 1
 
 
+def _demo() -> int:
+    """Three verdicts on synthetic data, offline, with nothing to write first.
+
+    One case would prove nothing. A tool that answered "overfit" to everything would
+    look identical to this one on a strategy that deserved it, and a tool that agreed
+    with everything would look identical on the case that works. Showing all three
+    together is the only demonstration that says anything: a real edge has to survive,
+    noise has to die, and a bug that reads one bar ahead has to be caught outright.
+    """
+    from . import examples, run
+
+    grid = {"fast": [5, 10, 20], "slow": [50, 100, 200]}
+    cases = [
+        ("A genuine edge", "should survive",
+         examples.ma_crossover, examples.trending_market(4000, seed=7)),
+        ("The same rule on noise", "should find nothing",
+         examples.ma_crossover, examples.random_market(4000, seed=7)),
+        ("A rule that peeks one bar ahead", "should be caught outright",
+         examples.ma_crossover_leaky, examples.trending_market(4000, seed=7)),
+    ]
+
+    print(f"\n{BOLD}Three strategies you did not write, on prices that do not exist.{RESET}")
+    print(f"{DIM}No network, no data feed, no files. A few seconds.{RESET}\n")
+
+    for title, expectation, strategy, bars in cases:
+        print(f"{BOLD}{title}{RESET} {DIM}— {expectation}{RESET}")
+        verdict = run(strategy, bars, PRESETS["equity"], grid, n_permutations=50)
+        colour = GREEN if verdict.score >= 50 else (YELLOW if verdict.score >= 20 else RED)
+        print(f"  {colour}{BOLD}{verdict.score:5.1f}/100  {verdict.label}{RESET}\n")
+
+    print(f"{DIM}The third one is the point. It is the same strategy as the first with a "
+          f"single index shifted the wrong way — the kind of mistake that produces a "
+          f"beautiful equity curve and no money.{RESET}")
+    print(f"\nOn something of your own:\n"
+          f"  {BOLD}falsify-quant mystrategy.py --symbol AAPL --market equity{RESET}\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _utf8_console()
     p = argparse.ArgumentParser(
@@ -179,6 +223,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("strategy", type=Path, nargs="?",
                    help="python file defining strategy() and GRID")
+    p.add_argument("--demo", action="store_true",
+                   help="score three example strategies offline and exit; needs no "
+                        "file, no network and no data")
     p.add_argument("--verify", type=Path, metavar="FILE",
                    help="check an attestation and exit; exits non-zero if tampered")
     p.add_argument("--attest", nargs="?", const=True, default=None, metavar="FILE",
@@ -200,10 +247,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-open", action="store_true", help="do not open the report")
     args = p.parse_args(argv)
 
+    if args.demo:
+        return _demo()
     if args.verify:
         return _verify(args.verify)
     if args.strategy is None:
-        p.error("need a strategy file, or --verify FILE")
+        p.error("need a strategy file, or --demo, or --verify FILE")
 
     mod = _load_module(args.strategy)
     spec = PRESETS[args.market]
