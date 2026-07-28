@@ -8,7 +8,7 @@ Run it against a real market:
 
 import numpy as np
 
-from falsify.examples import rolling_mean
+from falsify_quant.examples import rolling_mean
 
 GRID = {
     "fast": [5, 8, 12, 20, 30, 50],

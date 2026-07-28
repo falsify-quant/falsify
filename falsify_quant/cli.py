@@ -172,7 +172,7 @@ def _verify(path: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     _utf8_console()
     p = argparse.ArgumentParser(
-        prog="falsify",
+        prog="falsify-quant",
         description="Try to prove a trading strategy is nothing.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,

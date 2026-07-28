@@ -17,8 +17,8 @@ import json
 
 import pytest
 
-from falsify.monitor import Alert, MonitorVerdict
-from falsify.watch import (
+from falsify_quant.monitor import Alert, MonitorVerdict
+from falsify_quant.watch import (
     AlertState,
     Event,
     StateStore,
@@ -385,7 +385,7 @@ def test_event_line_is_printable_for_every_severity(severity):
 
 def test_the_example_config_is_valid_json():
     """It is the first thing anyone copies. It must not need fixing first."""
-    from falsify.watch import CONFIG_EXAMPLE
+    from falsify_quant.watch import CONFIG_EXAMPLE
 
     cfg = json.loads(CONFIG_EXAMPLE)
     assert {"database", "state", "sinks"} <= set(cfg)
@@ -400,19 +400,19 @@ def test_the_example_config_is_valid_json():
     ("", None),
 ])
 def test_since_accepts_dates_and_timestamps(value, want):
-    from falsify.watch import _as_epoch
+    from falsify_quant.watch import _as_epoch
 
     assert _as_epoch(value) == want
 
 
 def test_build_sinks_defaults_to_logging():
-    from falsify.watch import build_sinks
+    from falsify_quant.watch import build_sinks
 
     assert len(build_sinks([])) == 1
 
 
 def test_build_sinks_rejects_an_unknown_kind():
-    from falsify.watch import build_sinks
+    from falsify_quant.watch import build_sinks
 
     with pytest.raises(ValueError, match="unknown sink"):
         build_sinks([{"kind": "carrier-pigeon"}])
@@ -420,7 +420,7 @@ def test_build_sinks_rejects_an_unknown_kind():
 
 def test_check_mode_validates_without_polling(tmp_path, capsys):
     """`--check` is what you run after editing a config on a box you cannot watch."""
-    from falsify.watch import main
+    from falsify_quant.watch import main
 
     cfg = tmp_path / "c.json"
     cfg.write_text(json.dumps({
@@ -435,7 +435,7 @@ def test_check_mode_validates_without_polling(tmp_path, capsys):
 
 
 def test_a_config_missing_required_keys_says_which(tmp_path, capsys):
-    from falsify.watch import main
+    from falsify_quant.watch import main
 
     cfg = tmp_path / "c.json"
     cfg.write_text(json.dumps({"market": "crypto-spot"}), encoding="utf-8")
@@ -446,7 +446,7 @@ def test_a_config_missing_required_keys_says_which(tmp_path, capsys):
 
 
 def test_unreadable_config_exits_two(tmp_path, capsys):
-    from falsify.watch import main
+    from falsify_quant.watch import main
 
     assert main([str(tmp_path / "nope.json"), "--check"]) == 2
 
@@ -457,14 +457,14 @@ def test_unreadable_config_exits_two(tmp_path, capsys):
 
 
 def test_example_flag_needs_no_config(capsys):
-    from falsify.watch import main
+    from falsify_quant.watch import main
 
     assert main(["--example"]) == 0
     assert json.loads(capsys.readouterr().out)["market"] == "crypto-spot"
 
 
 def test_no_arguments_at_all_explains_itself(capsys):
-    from falsify.watch import main
+    from falsify_quant.watch import main
 
     with pytest.raises(SystemExit):
         main([])

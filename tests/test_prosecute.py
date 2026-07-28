@@ -11,16 +11,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from falsify.harness import Sweep
-from falsify.prosecute import (
+from falsify_quant.harness import Sweep
+from falsify_quant.prosecute import (
     Finding,
     check_causality,
     check_costs,
     check_pbo,
     check_regime,
 )
-from falsify.spec import Bars, MarketSpec
-from falsify.stats import sharpe_columns
+from falsify_quant.spec import Bars, MarketSpec
+from falsify_quant.stats import sharpe_columns
 
 SPEC = MarketSpec(name="test", asset_class="crypto", bars_per_year=365,
                   fee=0.0005, half_spread=0.0)
@@ -345,7 +345,7 @@ def test_prior_searches_are_charged_for():
     in, and the deflation has to actually get harder. If it did not, the counter in the
     interface would be decoration.
     """
-    from falsify.prosecute import check_deflation
+    from falsify_quant.prosecute import check_deflation
 
     rng = np.random.default_rng(19)
     returns = 0.0008 + 0.01 * rng.standard_normal((4000, 12))
@@ -364,7 +364,7 @@ def test_prior_searches_are_charged_for():
 
 def test_no_prior_history_changes_nothing():
     """The default path must be byte-identical to what it was before the hook existed."""
-    from falsify.prosecute import check_deflation
+    from falsify_quant.prosecute import check_deflation
 
     rng = np.random.default_rng(4)
     sw = make_sweep(0.0005 + 0.01 * rng.standard_normal((2000, 8)))
@@ -375,7 +375,7 @@ def test_no_prior_history_changes_nothing():
 
 def test_prior_sharpes_pool_into_the_variance_too():
     """N and V are both inputs to the expected maximum. Charging only N understates it."""
-    from falsify.prosecute import check_deflation
+    from falsify_quant.prosecute import check_deflation
 
     rng = np.random.default_rng(8)
     sw = make_sweep(0.0006 + 0.01 * rng.standard_normal((3000, 10)))

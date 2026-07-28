@@ -77,7 +77,21 @@ jobs:
           python -m venv /tmp/wheelenv
           /tmp/wheelenv/bin/python -m pip install --upgrade pip
           /tmp/wheelenv/bin/python -m pip install dist/*.whl
-          /tmp/wheelenv/bin/python -c "import falsify; print(falsify.__name__)"
-          /tmp/wheelenv/bin/falsify --help > /dev/null
-          /tmp/wheelenv/bin/falsify-gui --help > /dev/null
-          /tmp/wheelenv/bin/falsify-watch --help > /dev/null
+          /tmp/wheelenv/bin/python -c "import falsify_quant; print(falsify_quant.__name__)"
+          /tmp/wheelenv/bin/falsify-quant --help > /dev/null
+          /tmp/wheelenv/bin/falsify-quant-gui --help > /dev/null
+          /tmp/wheelenv/bin/falsify-quant-watch --help > /dev/null
+
+      # The distribution shares PyPI with an unrelated project that ships its own
+      # top-level `falsify` module. Installing both must not shadow anything of ours,
+      # and the only way to know is to install both and look.
+      - name: Must coexist with the unrelated `falsify` on PyPI
+        run: |
+          /tmp/wheelenv/bin/python -m pip install falsify
+          /tmp/wheelenv/bin/python -c "
+          import falsify, falsify_quant
+          assert falsify_quant.__file__.endswith('falsify_quant/__init__.py'), falsify_quant.__file__
+          assert 'falsify_quant' not in falsify.__file__, falsify.__file__
+          print('no shadowing:', falsify.__file__, falsify_quant.__file__)
+          "
+          /tmp/wheelenv/bin/falsify-quant --help > /dev/null

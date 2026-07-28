@@ -31,7 +31,7 @@ from corpus.run import (
     plan,
     spec_for,
 )
-from falsify.spec import Bars
+from falsify_quant.spec import Bars
 from strategies.canon import CANON, by_name
 
 

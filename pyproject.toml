@@ -48,13 +48,17 @@ Homepage = "https://github.com/falsify-quant/falsify"
 Source = "https://github.com/falsify-quant/falsify"
 Issues = "https://github.com/falsify-quant/falsify/issues"
 
+# The distribution, the module and the commands all agree on one name. `falsify` on PyPI
+# is a different project that ships its own top-level `falsify.py` and owns the `falsify`
+# command, so a package named `falsify` here would collide on both -- silently, resolved
+# by whichever happened to be installed last.
 [project.scripts]
-falsify = "falsify.cli:main"
-falsify-gui = "falsify.gui:main"
-falsify-watch = "falsify.watch:main"
+falsify-quant = "falsify_quant.cli:main"
+falsify-quant-gui = "falsify_quant.gui:main"
+falsify-quant-watch = "falsify_quant.watch:main"
 
 [tool.setuptools.packages.find]
-include = ["falsify*"]
+include = ["falsify_quant*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

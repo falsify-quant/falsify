@@ -162,12 +162,12 @@ class App:
 
     def _run(self, job: Job, cfg: dict) -> None:
         try:
-            import falsify
-            from falsify.cli import _load_module
-            from falsify.data import GRANULARITY, load
-            from falsify.harness import sweep
-            from falsify.report import write_report
-            from falsify.spec import PRESETS
+            import falsify_quant
+            from falsify_quant.cli import _load_module
+            from falsify_quant.data import GRANULARITY, load
+            from falsify_quant.harness import sweep
+            from falsify_quant.report import write_report
+            from falsify_quant.spec import PRESETS
 
             # Confine to the served root. The strategy path arrives from the page, and
             # this executes it -- a value that can walk out of the tree with `..` turns a
@@ -202,7 +202,7 @@ class App:
                     f"{n_here} combinations here, {len(prior)} already tried this "
                     f"investigation — deflating by all {n_here + len(prior)}")
 
-            verdict = falsify.run_on_sweep(
+            verdict = falsify_quant.run_on_sweep(
                 sw, sw.best_index,
                 n_permutations=int(cfg.get("permutations", 100)),
                 permutation_method=cfg.get("null", "iid"),

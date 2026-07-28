@@ -41,9 +41,9 @@ from pathlib import Path
 
 import numpy as np
 
-import falsify
-from falsify.harness import sweep
-from falsify.spec import CRYPTO_SPOT_TAKER, EQUITY_LIQUID, MarketSpec
+import falsify_quant
+from falsify_quant.harness import sweep
+from falsify_quant.spec import CRYPTO_SPOT_TAKER, EQUITY_LIQUID, MarketSpec
 
 from . import cache
 from .assets import ALL, Asset
@@ -283,14 +283,14 @@ def run_cell(
 
     sw = sweep(cand.fn, bars, spec, cand.grid, valid=cand.valid)
     index = sw.index_of(cand.shipped)
-    verdict = falsify.run_on_sweep(
+    verdict = falsify_quant.run_on_sweep(
         sw, index, n_permutations=n_permutations, seed=seed
     )
 
     bpy = spec.bars_per_year
     best = sw.best_index
-    shipped_sr = falsify.annualise(float(sw.sharpes[index]), bpy)
-    best_sr = falsify.annualise(float(sw.sharpes[best]), bpy)
+    shipped_sr = falsify_quant.annualise(float(sw.sharpes[index]), bpy)
+    best_sr = falsify_quant.annualise(float(sw.sharpes[best]), bpy)
     prov = cache.describe(bars)
 
     return {
@@ -425,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         "INSERT OR REPLACE INTO runs (run_id, started_utc, falsify_version, git_sha, "
         "n_permutations, study_seed, environment) VALUES (?,?,?,?,?,?,?)",
         (args.run_id, datetime.now(timezone.utc).isoformat(timespec="seconds"),
-         falsify.__version__, _git_sha(), args.permutations, args.seed, _environment()),
+         falsify_quant.__version__, _git_sha(), args.permutations, args.seed, _environment()),
     )
     con.commit()
 

@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from scipy import stats as sps
 
-from falsify.stats import (
+from falsify_quant.stats import (
     annualise,
     deflated_sharpe,
     expected_max_sharpe,

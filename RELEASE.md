@@ -76,24 +76,34 @@ question is whether to. Unresolved; see "The import-name decision" below.
       irreversible action, not a second pair of eyes. Worth turning on the moment there
       is a second person.
 
-### The import-name decision
+### The import-name decision — settled 2026-07-28
 
-Nothing blocks going public — this blocks the first *upload*, because the choice is
-permanent the moment anyone installs it. Three options, in the order they are worth
-considering:
+The distribution, the module and the commands now all agree on one name. `import
+falsify_quant`; `falsify-quant`, `falsify-quant-gui`, `falsify-quant-watch`. Done before
+the first upload, which is the only time it is cheap — after one release it is a breaking
+change for everyone who depends on it.
 
-1. **Keep `falsify`.** No churn, and the collision only bites the small set of people who
-   install both an ML-eval pre-registration CLI and a backtest validator. But when it
-   bites it is silent, and being the second package to claim a module name is a poor
-   look for a project whose subject is rigour.
-2. **Rename the module to `falsify_quant`, matching the distribution.** `import
-   falsify_quant`, console script `falsify-quant`. Unambiguous forever, costs a
-   mechanical rename across the package, the tests, the README and three entry points.
-   Cheap now, expensive after anyone depends on it.
-3. **Keep the module, rename only the CLI** (`falsify-quant` as the command). Halves the
-   collision and leaves the silent half in place. Probably the worst of the three.
+The alternative was keeping `falsify` and accepting that the collision only bites people
+who install both an ML-eval pre-registration CLI and a backtest validator. Rejected
+because when it does bite it is silent: `import falsify` resolves by `sys.path` order and
+fails as a confusing `AttributeError` rather than an honest `ImportError`.
 
-Decide before the first release, not after.
+Verified rather than assumed — both packages installed into one environment:
+
+```
+theirs   site-packages/falsify.py
+ours     site-packages/falsify_quant/__init__.py
+commands falsify, falsify-engine, falsify-quant, falsify-quant-gui, falsify-quant-watch
+```
+
+Five commands, no overlap, both CLIs run. CI now installs the real `falsify` from PyPI
+alongside the built wheel and asserts neither shadows the other, so a future packaging
+change cannot quietly reintroduce the collision.
+
+Two things deliberately keep the old name. The **project** is still called falsify, so
+prose saying what falsify does is unchanged. And the keys inside the hashed attestation
+body — `falsify_version`, `falsify_attestation` — name the tool, not the module; renaming
+them would break the schema to no purpose.
 
 ### The sdist has to be able to test itself
 

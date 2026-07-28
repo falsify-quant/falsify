@@ -34,7 +34,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
-from falsify.indicators import (
+from falsify_quant.indicators import (
     atr,
     bollinger,
     day_of_month,
@@ -51,7 +51,7 @@ from falsify.indicators import (
     stochastic,
     williams_r,
 )
-from falsify.spec import Bars
+from falsify_quant.spec import Bars
 
 __all__ = ["Candidate", "CANON", "by_name", "for_cadence"]
 

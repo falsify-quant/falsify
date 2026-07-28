@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-# `rolling_mean` and `rolling_std` now live in `falsify.indicators` alongside the rest of
+# `rolling_mean` and `rolling_std` now live in `falsify_quant.indicators` alongside the rest of
 # the causal primitives, and are re-exported here so the self-test and the example
 # strategies keep importing them from the place they always did.
 

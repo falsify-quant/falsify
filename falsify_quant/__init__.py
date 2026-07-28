@@ -4,8 +4,8 @@ Every other backtesting tool helps you search for parameters that look good. Thi
 assumes you already did that, and tries to establish that what you found is an artefact
 of the search. It has no optimiser and no knobs that improve a score.
 
-    import falsify
-    from falsify.spec import Bars, CRYPTO_PERP_TAKER
+    import falsify_quant
+    from falsify_quant.spec import Bars, CRYPTO_PERP_TAKER
 
     def momentum(bars, fast=10, slow=50):
         c = bars.close
@@ -13,7 +13,7 @@ of the search. It has no optimiser and no knobs that improve a score.
         s = moving_average(c, int(slow))
         return np.where(f > s, 1.0, -1.0)
 
-    verdict = falsify.run(
+    verdict = falsify_quant.run(
         momentum,
         bars=Bars(close=prices, ts=timestamps, symbol="BTC-USD"),
         spec=CRYPTO_PERP_TAKER,
@@ -21,7 +21,7 @@ of the search. It has no optimiser and no knobs that improve a score.
         valid=lambda p: p["fast"] < p["slow"],
     )
     print(verdict.score, verdict.label)
-    falsify.write_report(verdict, "verdict.html")
+    falsify_quant.write_report(verdict, "verdict.html")
 
 The strategy must return one target weight per bar, using only information available at
 that bar. `falsify` applies the execution lag, charges the costs, and checks the

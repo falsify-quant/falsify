@@ -219,7 +219,7 @@ def attest(
     hashed body precisely so that an anchor binds a specific claimed date, and a date
     nobody anchored was never evidence in the first place.
     """
-    import falsify
+    import falsify_quant
 
     meta = dict(verdict.meta)
     equity = meta.pop("equity", None)
@@ -232,7 +232,7 @@ def attest(
         "schema": SCHEMA_VERSION,
         "created_utc": created_utc or datetime.now(timezone.utc).isoformat(
             timespec="seconds"),
-        "falsify_version": falsify.__version__,
+        "falsify_version": falsify_quant.__version__,
         "environment": {
             "python": platform.python_version(),
             "numpy": np.__version__,
@@ -318,7 +318,7 @@ class VerifyResult:
 
 def verify(att: Attestation) -> VerifyResult:
     """Check an attestation against itself and against the published arithmetic."""
-    import falsify
+    import falsify_quant
 
     out = VerifyResult()
     body = att.body
@@ -391,11 +391,11 @@ def verify(att: Attestation) -> VerifyResult:
     ))
 
     version = body.get("falsify_version")
-    same_v = version == falsify.__version__
+    same_v = version == falsify_quant.__version__
     out.checks.append(Check(
         "version", same_v,
         f"produced by falsify {version}" if same_v
-        else f"produced by falsify {version}; verifying with {falsify.__version__}",
+        else f"produced by falsify {version}; verifying with {falsify_quant.__version__}",
         severity="warning" if not same_v else "info",
     ))
 

@@ -44,7 +44,7 @@ pip install falsify-quant
 If you'd rather click than type:
 
 ```bash
-falsify-gui
+falsify-quant-gui
 ```
 
 That opens a page in your browser. Pick a market, point it at a strategy file, press Run.
@@ -75,7 +75,7 @@ short:
 ```python
 # strategies/trend.py
 import numpy as np
-from falsify.indicators import rolling_mean
+from falsify_quant.indicators import rolling_mean
 
 # Every combination you want checked. falsify runs all of them.
 GRID = {"fast": [5, 8, 12, 20, 30, 50], "slow": [60, 90, 120, 160, 200, 250]}
@@ -95,7 +95,7 @@ def strategy(bars, fast=20, slow=100):
 Point it at a market:
 
 ```bash
-falsify strategies/trend.py --symbol SPY --market equity
+falsify-quant strategies/trend.py --symbol SPY --market equity
 ```
 
 You get a score out of 100, a sentence explaining it, and an HTML report. Prices are
@@ -269,7 +269,7 @@ never documented.
 > times larger than the one you deflated by.
 
 ```python
-falsify.run_universe(strategy, bars_by_symbol, spec, grid,
+falsify_quant.run_universe(strategy, bars_by_symbol, spec, grid,
                      chosen=["BTC-USD", "ETH-USD"], params={"window": 200})
 ```
 
@@ -330,8 +330,8 @@ Once a strategy is running, the question changes from "is this real?" to "is the
 running still the thing I tested?"
 
 ```python
-from falsify.adapters import load_bot_db
-from falsify.monitor import monitor
+from falsify_quant.adapters import load_bot_db
+from falsify_quant.monitor import monitor
 
 record = load_bot_db("trader.db")          # read-only; safe on a live database
 monitor(record, spec, strategy=..., bars_by_symbol=..., params=...,
@@ -380,10 +380,10 @@ trip the same heuristic.
 ### Leaving it running
 
 ```bash
-falsify-watch --example > watch.json    # edit it
-falsify-watch watch.json --check        # validate config and strategy, poll nothing
-falsify-watch watch.json                # daemon
-falsify-watch watch.json --once         # one cycle, for cron
+falsify-quant-watch --example > watch.json    # edit it
+falsify-quant-watch watch.json --check        # validate config and strategy, poll nothing
+falsify-quant-watch watch.json                # daemon
+falsify-quant-watch watch.json --once         # one cycle, for cron
 ```
 
 The loop is worth less than what it refuses to say. Four rules:
@@ -416,8 +416,8 @@ strategy is nothing; people do care what a stranger's strategy is worth before w
 at it.
 
 ```bash
-falsify mystrategy.py --symbol AAPL --attest
-falsify --verify their-verdict.json     # exit 1 if tampered, 2 if unreadable
+falsify-quant mystrategy.py --symbol AAPL --attest
+falsify-quant --verify their-verdict.json     # exit 1 if tampered, 2 if unreadable
 ```
 
 Verification does not merely re-hash. It **recomputes the headline score from the individual
@@ -441,7 +441,7 @@ backdating is undetectable. To make the date mean something, publish the hash so
 with a clock you don't control and record where:
 
 ```bash
-falsify mystrategy.py --symbol AAPL --attest --anchor git=https://github.com/you/r/commit/abc
+falsify-quant mystrategy.py --symbol AAPL --attest --anchor git=https://github.com/you/r/commit/abc
 ```
 
 Publish the hash **first**, then let time pass, then show the results. A hash published

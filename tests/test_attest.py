@@ -17,7 +17,7 @@ import json
 import numpy as np
 import pytest
 
-from falsify.attest import (
+from falsify_quant.attest import (
     SCHEMA_VERSION,
     Attestation,
     attest,
@@ -29,8 +29,8 @@ from falsify.attest import (
     verify,
     write_attestation,
 )
-from falsify.prosecute import Finding
-from falsify.score import WEIGHTS, score_findings
+from falsify_quant.prosecute import Finding
+from falsify_quant.score import WEIGHTS, score_findings
 
 
 def _verdict(scores=None):
@@ -364,7 +364,7 @@ def test_weights_recorded_match_the_library():
 
 def test_verify_exit_codes_are_scriptable(tmp_path, capsys):
     """The exit code is the whole interface for anyone wiring this into a pipeline."""
-    from falsify.cli import main
+    from falsify_quant.cli import main
 
     good = write_attestation(attest(_verdict()), tmp_path / "good.json")
     assert main(["--verify", str(good)]) == 0
@@ -384,14 +384,14 @@ def test_verify_exit_codes_are_scriptable(tmp_path, capsys):
 
 def test_verify_needs_no_strategy_argument(tmp_path):
     """`falsify --verify file` has to work for someone who was only sent the document."""
-    from falsify.cli import main
+    from falsify_quant.cli import main
 
     p = write_attestation(attest(_verdict()), tmp_path / "a.json")
     assert main(["--verify", str(p)]) == 0
 
 
 def test_running_with_no_arguments_at_all_explains_itself(capsys):
-    from falsify.cli import main
+    from falsify_quant.cli import main
 
     with pytest.raises(SystemExit):
         main([])
@@ -404,7 +404,7 @@ def test_running_with_no_arguments_at_all_explains_itself(capsys):
     (None, None),
 ])
 def test_anchor_parsing(text, want):
-    from falsify.cli import _parse_anchor
+    from falsify_quant.cli import _parse_anchor
 
     assert _parse_anchor(text, None) == want
 
@@ -412,7 +412,7 @@ def test_anchor_parsing(text, want):
 def test_a_malformed_anchor_is_rejected_rather_than_guessed():
     import argparse
 
-    from falsify.cli import _parse_anchor
+    from falsify_quant.cli import _parse_anchor
 
     with pytest.raises(SystemExit):
         _parse_anchor("just-a-url", argparse.ArgumentParser())

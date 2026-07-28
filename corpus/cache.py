@@ -32,8 +32,8 @@ from pathlib import Path
 
 import numpy as np
 
-from falsify.data import load_crypto, load_equity
-from falsify.spec import Bars
+from falsify_quant.data import load_crypto, load_equity
+from falsify_quant.spec import Bars
 
 __all__ = ["CACHE_DIR", "fingerprint", "get", "describe", "warm"]
 

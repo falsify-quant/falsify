@@ -20,11 +20,11 @@ import urllib.request
 import numpy as np
 import pytest
 
-from falsify.gui import PAGE, Investigation, Run, serve
+from falsify_quant.gui import PAGE, Investigation, Run, serve
 
 STRATEGY = '''
 import numpy as np
-from falsify.indicators import rolling_mean
+from falsify_quant.indicators import rolling_mean
 
 GRID = {"fast": [3, 5], "slow": [10, 20]}
 
@@ -84,10 +84,10 @@ def test_the_counter_reaches_the_deflation_rather_than_only_the_screen():
     decoration and the interface would be exactly the free-re-run machine it is meant not
     to be.
     """
-    from falsify.harness import Sweep
-    from falsify.prosecute import check_deflation
-    from falsify.spec import MarketSpec
-    from falsify.stats import sharpe_columns
+    from falsify_quant.harness import Sweep
+    from falsify_quant.prosecute import check_deflation
+    from falsify_quant.spec import MarketSpec
+    from falsify_quant.stats import sharpe_columns
 
     rng = np.random.default_rng(21)
     returns = 0.0007 + 0.01 * rng.standard_normal((3000, 12))
@@ -95,7 +95,7 @@ def test_the_counter_reaches_the_deflation_rather_than_only_the_screen():
                returns=returns.astype(np.float32), sharpes=sharpe_columns(returns),
                gross=returns.sum(axis=0), churn=np.ones(12),
                failed=np.zeros(12, dtype=bool),
-               bars=__import__("falsify").Bars(close=100.0 * np.ones(3000)),
+               bars=__import__("falsify_quant").Bars(close=100.0 * np.ones(3000)),
                spec=MarketSpec(name="t", asset_class="equity", bars_per_year=252,
                                fee=0.0, half_spread=0.0),
                strategy=lambda b, **p: np.zeros(len(b)), grid={"i": list(range(12))})
@@ -282,12 +282,12 @@ def test_a_bad_strategy_surfaces_in_the_page_not_the_console(live):
 
 def test_the_suite_never_reaches_the_network(live, monkeypatch):
     """CI must not depend on Yahoo being up. Pinned so a future test cannot add it."""
-    import falsify.data
+    import falsify_quant.data
 
     def refuse(*_a, **_k):
         raise AssertionError("a test tried to fetch prices")
 
-    monkeypatch.setattr(falsify.data, "_get", refuse)
+    monkeypatch.setattr(falsify_quant.data, "_get", refuse)
 
     base, _ = live
     assert _get(base + "/api/session")[0] == 200

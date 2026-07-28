@@ -1,7 +1,7 @@
 """Indicator arithmetic, checked against definitions rather than against itself.
 
 The load-bearing test in this file is `test_every_indicator_is_causal`. Everything in
-`falsify.indicators` exists to be a *reference* implementation -- the corpus study reads
+`falsify_quant.indicators` exists to be a *reference* implementation -- the corpus study reads
 its conclusions about the published canon straight out of these functions -- so a leak
 here would not produce an obvious failure. It would produce a study whose headline number
 was quietly, defensibly wrong.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from falsify.indicators import (
+from falsify_quant.indicators import (
     atr,
     bollinger,
     day_of_month,
@@ -36,7 +36,7 @@ from falsify.indicators import (
     wilder,
     williams_r,
 )
-from falsify.spec import Bars
+from falsify_quant.spec import Bars
 
 
 def _bars(n: int = 400, seed: int = 0) -> Bars:

@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from falsify.sim import simulate
-from falsify.spec import Bars, MarketSpec
+from falsify_quant.sim import simulate
+from falsify_quant.spec import Bars, MarketSpec
 
 FREE = MarketSpec(name="frictionless", asset_class="crypto", bars_per_year=365,
                   fee=0.0, half_spread=0.0)

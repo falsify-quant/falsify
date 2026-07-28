@@ -18,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from falsify.spec import Bars
+from falsify_quant.spec import Bars
 from strategies.canon import CANON, Candidate, by_name, for_cadence, turn_of_month
 
 NAMES = [c.name for c in CANON]
@@ -234,7 +234,7 @@ def test_runs_on_a_close_only_history(name):
 
 def test_donchian_would_be_dead_without_the_channel_shift():
     """The bug the shift exists to prevent, demonstrated rather than described."""
-    from falsify.indicators import rolling_max
+    from falsify_quant.indicators import rolling_max
 
     b = _market()
     assert not np.any(b.close > rolling_max(b.close, 20))  # unshifted: never fires

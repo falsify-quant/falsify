@@ -19,15 +19,15 @@ from __future__ import annotations
 import sys
 import time
 
-import falsify
-from falsify.examples import (
+import falsify_quant
+from falsify_quant.examples import (
     ma_crossover,
     ma_crossover_leaky,
     random_market,
     trending_market,
     zscore_threshold_leaky,
 )
-from falsify.spec import EQUITY_LIQUID
+from falsify_quant.spec import EQUITY_LIQUID
 
 GRID = {"fast": [3, 5, 8, 12, 20, 30], "slow": [40, 60, 90, 130, 180, 250]}
 VALID = lambda p: p["fast"] < p["slow"]  # noqa: E731
@@ -62,25 +62,25 @@ def main() -> int:
     # A moving-average crossover swept over 36 combinations of geometric Brownian motion.
     # The best cell will look tradeable. It cannot be, because there is nothing there.
     bars = random_market(3000, seed=7, symbol="GBM-NOISE")
-    v = falsify.run(ma_crossover, bars, EQUITY_LIQUID, GRID, valid=VALID,
+    v = falsify_quant.run(ma_crossover, bars, EQUITY_LIQUID, GRID, valid=VALID,
                     n_permutations=100, seed=1)
     results.append(show("A. Best of 36 variants fit to pure noise", v, "low"))
-    falsify.write_report(v, "reports/noise.html")
+    falsify_quant.write_report(v, "reports/noise.html")
 
     # ------------------------------------------------------------- B: lookahead bug
     # Same idea, smoothed with a centred window so half the kernel is in the future.
     # Run on pure noise: with a leak, even noise produces a spectacular equity curve,
     # which is precisely why this bug is so seductive.
     bars = random_market(3000, seed=11, symbol="CENTRED-MA")
-    v = falsify.run(ma_crossover_leaky, bars, EQUITY_LIQUID, GRID, valid=VALID,
+    v = falsify_quant.run(ma_crossover_leaky, bars, EQUITY_LIQUID, GRID, valid=VALID,
                     n_permutations=5, seed=2)
     results.append(show("B. Centred moving average (reads n/2 bars ahead)", v, "broken"))
-    falsify.write_report(v, "reports/leak.html")
+    falsify_quant.write_report(v, "reports/leak.html")
 
     # ------------------------------------------------ B2: the subtler normalisation leak
     # Full-sample z-score compared against a fixed threshold. Unlike the crossover case,
     # here the scale factor does not cancel, so it is a genuine leak.
-    v = falsify.run(zscore_threshold_leaky, bars, EQUITY_LIQUID,
+    v = falsify_quant.run(zscore_threshold_leaky, bars, EQUITY_LIQUID,
                     {"lookback": [10, 20, 40], "entry": [0.5, 1.0, 1.5]},
                     n_permutations=5, seed=4)
     results.append(show("B2. Full-sample z-score vs a fixed threshold", v, "broken"))
@@ -94,10 +94,10 @@ def main() -> int:
     # phi gets. That is a real distinction worth keeping: "no signal" and "wrong
     # instrument for the signal" produce identical-looking equity curves.
     bars = trending_market(5000, half_life=100, seed=3, symbol="TRENDING")
-    v = falsify.run(ma_crossover, bars, EQUITY_LIQUID, GRID, valid=VALID,
+    v = falsify_quant.run(ma_crossover, bars, EQUITY_LIQUID, GRID, valid=VALID,
                     n_permutations=100, seed=3)
     results.append(show("C. Genuine slow trends, traded at the right horizon", v, "high"))
-    falsify.write_report(v, "reports/real.html")
+    falsify_quant.write_report(v, "reports/real.html")
 
     # ------------------------------------------------------- D: universe selection bias
     # Twelve assets of pure noise. Ship the two that happened to score best. The
@@ -106,11 +106,11 @@ def main() -> int:
                       for i in range(12)}
     ranked = sorted(
         noise_universe,
-        key=lambda s: falsify.sharpe(
-            falsify.sweep(ma_crossover, noise_universe[s], EQUITY_LIQUID, GRID,
+        key=lambda s: falsify_quant.sharpe(
+            falsify_quant.sweep(ma_crossover, noise_universe[s], EQUITY_LIQUID, GRID,
                           valid=VALID).returns[:, 0].astype(float)),
         reverse=True)
-    uv = falsify.run_universe(ma_crossover, noise_universe, EQUITY_LIQUID, GRID,
+    uv = falsify_quant.run_universe(ma_crossover, noise_universe, EQUITY_LIQUID, GRID,
                               chosen=ranked[:2], params={"fast": 12, "slow": 90},
                               valid=VALID, min_bars=300)
     ok_d = uv.label == "SELECTION BIAS" or uv.score < 40
@@ -127,7 +127,7 @@ def main() -> int:
     trend_universe = {f"T{i:02d}": trending_market(2500, half_life=100, seed=200 + i,
                                                    symbol=f"T{i:02d}")
                       for i in range(12)}
-    uv2 = falsify.run_universe(ma_crossover, trend_universe, EQUITY_LIQUID, GRID,
+    uv2 = falsify_quant.run_universe(ma_crossover, trend_universe, EQUITY_LIQUID, GRID,
                                chosen=["T05", "T06"], params={"fast": 12, "slow": 90},
                                valid=VALID, min_bars=300)
     ok_e = uv2.label == "BROAD"
@@ -143,8 +143,8 @@ def main() -> int:
     # its strategy, and crying wolf at one that has not.
     import numpy as np
 
-    from falsify.monitor import Fill, LiveRecord, replay_divergence
-    from falsify.spec import Bars
+    from falsify_quant.monitor import Fill, LiveRecord, replay_divergence
+    from falsify_quant.spec import Bars
 
     n = 1500
     base_ts = 1_750_000_000
