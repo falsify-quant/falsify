@@ -12,6 +12,11 @@ falsify-report.html
 _cache/
 _live/
 *.db
+
+# The corpus study's downloaded bars. Tens of megabytes of vendor data that is not
+# mine to redistribute. Reproducibility comes from the fingerprints recorded next to
+# every verdict, and from corpus/results.csv, which is text and diffable.
+corpus/data/
 *.db-shm
 *.db-wal
 

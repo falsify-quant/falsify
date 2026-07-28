@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .indicators import rolling_mean, rolling_std
 from .spec import Bars
 
 __all__ = [
@@ -24,36 +25,9 @@ __all__ = [
 ]
 
 
-# --------------------------------------------------------------------------------------
-# Causal rolling helpers
-# --------------------------------------------------------------------------------------
-
-
-def rolling_mean(x: np.ndarray, n: int) -> np.ndarray:
-    """Trailing mean over n bars. `out[i]` uses x[i-n+1 .. i] only. NaN during warmup."""
-    n = int(n)
-    out = np.full(len(x), np.nan)
-    if n < 1 or n > len(x):
-        return out
-    c = np.cumsum(np.insert(np.asarray(x, dtype=np.float64), 0, 0.0))
-    out[n - 1:] = (c[n:] - c[:-n]) / n
-    return out
-
-
-def rolling_std(x: np.ndarray, n: int) -> np.ndarray:
-    """Trailing standard deviation over n bars, same warmup convention."""
-    n = int(n)
-    out = np.full(len(x), np.nan)
-    if n < 2 or n > len(x):
-        return out
-    x = np.asarray(x, dtype=np.float64)
-    c1 = np.cumsum(np.insert(x, 0, 0.0))
-    c2 = np.cumsum(np.insert(x * x, 0, 0.0))
-    s1 = c1[n:] - c1[:-n]
-    s2 = c2[n:] - c2[:-n]
-    var = np.maximum((s2 - s1 * s1 / n) / (n - 1), 0.0)
-    out[n - 1:] = np.sqrt(var)
-    return out
+# `rolling_mean` and `rolling_std` now live in `falsify.indicators` alongside the rest of
+# the causal primitives, and are re-exported here so the self-test and the example
+# strategies keep importing them from the place they always did.
 
 
 # --------------------------------------------------------------------------------------
