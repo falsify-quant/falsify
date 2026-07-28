@@ -1,6 +1,6 @@
 # falsify
 
-[![tests](https://github.com/josephlangstroth-debug/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/josephlangstroth-debug/falsify/actions/workflows/ci.yml)
+[![tests](https://github.com/falsify-quant/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/falsify-quant/falsify/actions/workflows/ci.yml)
 [![python](https://img.shields.io/pypi/pyversions/falsify-quant)](https://pypi.org/project/falsify-quant/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
@@ -606,7 +606,7 @@ is nothing."
 Python 3.10+, numpy and scipy. Nothing else — no pandas, no build step, no account.
 
 ```bash
-git clone https://github.com/josephlangstroth-debug/falsify && cd falsify
+git clone https://github.com/falsify-quant/falsify && cd falsify
 pip install -e ".[dev]"
 ```
 

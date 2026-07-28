@@ -18,7 +18,7 @@ is the work.
 ## Setup
 
 ```bash
-git clone https://github.com/josephlangstroth-debug/falsify
+git clone https://github.com/falsify-quant/falsify
 cd falsify
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"

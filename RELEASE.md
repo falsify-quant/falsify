@@ -5,20 +5,20 @@ Nothing here blocks development; all of it blocks the first public link.
 
 ## Namespace
 
-The repo currently lives at `josephlangstroth-debug/falsify` because it is **private** and
-the URL has no audience yet. That name is not the one to launch under.
-
-- [ ] Claim a public namespace. `falsify` was already taken as a GitHub org.
-      Candidates, in preference order: `falsify-quant` (matches the PyPI name),
-      `falsifyhq`, `falsifylabs`, `getfalsify`. The GitHub API cannot tell you whether a
-      name is claimable — it only ever proves a name is *taken* — so the web UI is the
-      only real test.
-- [ ] **Transfer** the repo into it. Do not rename the account instead: a username rename
-      404s every profile and gist link, and its repository redirects die the moment
-      anyone claims the freed username and creates a matching repo name. Repo transfers
-      are the sturdier mechanism, and a private repo has no inbound links to break.
-- [ ] Update the three places the URL is baked in: `pyproject.toml` (`[project.urls]`),
-      the README badges and clone line, and the CONTRIBUTING clone line.
+- [x] Claim a public namespace. `falsify` was already taken as a GitHub org.
+      **`falsify-quant` claimed 2026-07-28**, matching the PyPI distribution name.
+      Recorded for anyone repeating this: the GitHub API cannot tell you whether a name
+      is claimable — it only ever proves a name is *taken* — so the web UI is the only
+      real test.
+- [ ] **Transfer** the repo into it, so it lands at `falsify-quant/falsify`. Do not rename
+      the account instead: a username rename 404s every profile and gist link, and its
+      repository redirects die the moment anyone claims the freed username and creates a
+      matching repo name. Repo transfers are the sturdier mechanism, and a private repo
+      has no inbound links to break.
+- [x] Update the three places the URL is baked in: `pyproject.toml` (`[project.urls]`),
+      the README badges and clone line, and the CONTRIBUTING clone line. All now point at
+      `falsify-quant/falsify`. **These are ahead of the transfer** — the badge and the
+      clone line are broken until it happens.
 
 ## PyPI
 
