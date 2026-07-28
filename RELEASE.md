@@ -34,18 +34,21 @@ the URL has no audience yet. That name is not the one to launch under.
 
 - [ ] `git ls-files | grep -c private/` must print **0**. This is the one that matters —
       `private/` holds live trading parameters, traded instruments, position sizing and
-      paths to databases with real account activity.
-- [ ] CI green on all three operating systems.
+      paths to databases with real account activity. Currently 0; re-check at the flip,
+      not once.
+- [x] CI green on all three operating systems. Six jobs: build, plus Python 3.10/3.12/3.13
+      on Linux and 3.12 on macOS and Windows.
 - [ ] Read Öztürk's `falsify` on PyPI first. It pre-registers ML evaluation claims as
       SHA-256 hashes — the same pre-commitment idea as the planned attested reports,
       applied to ML evals. Prior art worth understanding before designing ours.
 
 ## Launch content
 
-- [ ] The corpus study. Aggregate statistics only — **do not publish verdicts naming
+- [x] The corpus study. Aggregate statistics only — **do not publish verdicts naming
       commercial vendors.** "Of N strategies, the median scored X, and one in six was
       reading data it could not have had" is the more interesting claim anyway, and it
-      does not invite a defamation letter.
+      does not invite a defamation letter. Done: `corpus/FINDINGS.md`, 890 cells, no
+      vendor named anywhere in the output.
 
 ## Licensing note
 

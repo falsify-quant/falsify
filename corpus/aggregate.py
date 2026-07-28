@@ -374,22 +374,52 @@ def window_effect(cells: list[dict]) -> list[str]:
                   if f["label"] in ("SURVIVED", "PLAUSIBLE")
                   and s["label"] not in ("SURVIVED", "PLAUSIBLE"))
     good_full = sum(1 for f, _ in pairs if f["label"] in ("SURVIVED", "PLAUSIBLE"))
-    yrs_full = statistics.median([f["years"] for f, _ in pairs])
-    yrs_short = statistics.median([s["years"] for _, s in pairs])
 
-    return [
+    # The median shortening is small and badly misrepresents the effect: most of the
+    # universe listed recently and barely loses anything, while the few long histories
+    # lose several years each. Report the split, and use the cells that barely moved as
+    # a control -- if those disagreed, the comparison would be measuring a bug.
+    lost = [f["years"] - s["years"] for f, s in pairs]
+    barely = [(f, s) for f, s in pairs if f["years"] - s["years"] < 0.25]
+    heavy = [(f, s) for f, s in pairs if f["years"] - s["years"] >= 1.0]
+    agree = sum(1 for f, s in barely if abs(f["score"] - s["score"]) < 5)
+
+    out = [
         "## Choosing the window",
         "",
-        f"The same rules, the same instruments, the same daily bars — scored over all "
-        f"available history (median {_fmt(yrs_full, 1)} years) and then over only the "
-        f"most recent stretch (median {_fmt(yrs_short, 1)} years).",
+        "The same rules, the same instruments, the same daily bars — scored over all "
+        "available history, and then over only the stretch the hourly feed also covers.",
         "",
         f"- Median score **{_fmt(statistics.median(full))} on the full history** vs "
         f"**{_fmt(statistics.median(short))} on the recent window**, across "
         f"{len(pairs)} pairs.",
-        f"- **{flipped} of {good_full}** rules that reached PLAUSIBLE or better on the "
+        f"- **{flipped} of {good_full}** cases that reached PLAUSIBLE or better on the "
         f"full history failed to on the shorter one.",
         "",
+        f"The median history lost is only {_fmt(statistics.median(lost), 1)} years, and "
+        f"that number is misleading. Most of this universe listed recently and loses "
+        f"almost nothing; the long-lived pairs lose {_fmt(_q(lost, 0.9), 1)} years at the "
+        f"90th percentile — and what they lose is the 2021 bull market, which is where a "
+        f"crypto trend rule earned everything it earned.",
+        "",
+    ]
+    if barely:
+        out += [
+            f"That split is also the control. In the {len(barely)} pairs whose two windows "
+            f"differ by under three months, **{agree} agree within five points** — so the "
+            f"comparison is measuring the history that was removed, not an error in "
+            f"removing it.",
+            "",
+        ]
+    if heavy:
+        hf = statistics.median([f["score"] for f, _ in heavy])
+        hs = statistics.median([s["score"] for _, s in heavy])
+        out += [
+            f"In the {len(heavy)} pairs that lose a year or more, the median goes "
+            f"**{_fmt(hf)} → {_fmt(hs)}**.",
+            "",
+        ]
+    out += [
         "Two effects are tangled here and cannot be separated with this design: the "
         "shorter window is also the *more recent* one, and a shorter sample is penalised "
         "on its own merits, because deflation is less forgiving when there is less "
@@ -403,6 +433,7 @@ def window_effect(cells: list[dict]) -> list[str]:
         "one nobody reports.",
         "",
     ]
+    return out
 
 
 def asset_class_split(cells: list[dict]) -> list[str]:
