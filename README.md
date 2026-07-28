@@ -41,6 +41,33 @@ Install it:
 pip install falsify-quant
 ```
 
+If you'd rather click than type:
+
+```bash
+falsify-gui
+```
+
+That opens a page in your browser. Pick a market, point it at a strategy file, press Run.
+No account, no upload, nothing leaves your machine — it's a small local server, and the
+whole page is one file with no JavaScript dependencies.
+
+**It counts how many times you've asked.** This matters more than it sounds. A graphical
+interface makes re-running free: tweak the settings, press Run, watch the number move. Do
+that six times and keep the best, and you have just performed the exact search this tool
+exists to charge you for — except invisibly, because each run looks like a fresh question.
+
+So the app remembers. Every run inside an *investigation* is added to the next verdict's
+deflation, with a running total on screen:
+
+```
+3 searches this investigation, 108 combinations total.
+The next verdict is deflated by all of them.
+```
+
+There's a **New investigation** button, because sometimes the next question genuinely is
+unrelated. It tells you how many combinations you're discarding, and it asks first. That
+difference — a button you press versus a default you never notice — is the whole design.
+
 Write your strategy as a plain Python function. Prices go in; a number per bar comes out
 saying how much you want to be holding — `1.0` fully long, `0.0` in cash, `-1.0` fully
 short:

@@ -140,9 +140,15 @@ def run_on_sweep(
     n_blocks: int = 16,
     n_chunks: int = 6,
     seed: int = 0,
+    prior_sharpes=None,
     progress: Callable[[str], None] | None = None,
 ) -> Verdict:
-    """Prosecute one variant of an already-completed sweep."""
+    """Prosecute one variant of an already-completed sweep.
+
+    `prior_sharpes` charges for searches you already ran on the same question. See
+    `check_deflation` -- the short version is that a grid you ran, disliked and adjusted
+    is still a grid you ran.
+    """
     say = progress or (lambda _: None)
     findings: list[Finding] = []
 
@@ -159,7 +165,7 @@ def run_on_sweep(
     findings.append(check_costs(sw, index))
 
     say("deflating Sharpe")
-    findings.append(check_deflation(sw, index))
+    findings.append(check_deflation(sw, index, prior_sharpes=prior_sharpes))
 
     say("cross-validating selection")
     findings.append(check_pbo(sw, n_blocks=n_blocks))

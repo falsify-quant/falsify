@@ -330,3 +330,59 @@ def test_regime_score_is_bounded_and_finite_on_pathological_input():
                 np.concatenate([np.zeros(2999), [1.0]])):
         f = _regime(net)
         assert 0.0 <= f.score <= 1.0 and np.isfinite(f.score)
+
+
+# ----------------------------------------------------------------------------------
+# Deflation across repeated searches
+# ----------------------------------------------------------------------------------
+
+
+def test_prior_searches_are_charged_for():
+    """A grid you ran, disliked and adjusted is still a grid you ran.
+
+    The library sees one sweep per call and cannot know about the four before it. Anything
+    that does know -- a session that watched you re-run -- hands the earlier trial Sharpes
+    in, and the deflation has to actually get harder. If it did not, the counter in the
+    interface would be decoration.
+    """
+    from falsify.prosecute import check_deflation
+
+    rng = np.random.default_rng(19)
+    returns = 0.0008 + 0.01 * rng.standard_normal((4000, 12))
+    sw = make_sweep(returns)
+    best = int(np.argmax(sw.sharpes))
+
+    alone = check_deflation(sw, best)
+    with_history = check_deflation(
+        sw, best, prior_sharpes=rng.normal(0.0, 0.02, 200))
+
+    assert with_history.detail["n_trials"] == alone.detail["n_trials"] + 200
+    assert with_history.score < alone.score
+    assert (with_history.detail["deflated_benchmark_annual"]
+            > alone.detail["deflated_benchmark_annual"])
+
+
+def test_no_prior_history_changes_nothing():
+    """The default path must be byte-identical to what it was before the hook existed."""
+    from falsify.prosecute import check_deflation
+
+    rng = np.random.default_rng(4)
+    sw = make_sweep(0.0005 + 0.01 * rng.standard_normal((2000, 8)))
+    for prior in (None, np.array([])):
+        assert (check_deflation(sw, 0, prior_sharpes=prior).detail
+                == check_deflation(sw, 0).detail)
+
+
+def test_prior_sharpes_pool_into_the_variance_too():
+    """N and V are both inputs to the expected maximum. Charging only N understates it."""
+    from falsify.prosecute import check_deflation
+
+    rng = np.random.default_rng(8)
+    sw = make_sweep(0.0006 + 0.01 * rng.standard_normal((3000, 10)))
+
+    tight = check_deflation(sw, 0, prior_sharpes=np.full(100, 0.01))
+    spread = check_deflation(sw, 0, prior_sharpes=rng.normal(0.0, 0.05, 100))
+
+    assert tight.detail["n_trials"] == spread.detail["n_trials"]
+    assert spread.detail["trial_sharpe_variance"] > tight.detail["trial_sharpe_variance"]
+    assert spread.detail["deflated_benchmark_annual"] > tight.detail["deflated_benchmark_annual"]

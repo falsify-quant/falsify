@@ -295,12 +295,30 @@ def check_costs(sweep_: Sweep, index: int) -> Finding:
 # --------------------------------------------------------------------------------------
 
 
-def check_deflation(sweep_: Sweep, index: int) -> Finding:
-    """Deflated Sharpe Ratio: does the result beat the best of N coin flips?"""
+def check_deflation(
+    sweep_: Sweep, index: int, *, prior_sharpes: np.ndarray | None = None
+) -> Finding:
+    """Deflated Sharpe Ratio: does the result beat the best of N coin flips?
+
+    `prior_sharpes` carries the trials from *earlier searches of the same question*, so
+    they can be charged for too. A grid is one search; a person who runs a grid, dislikes
+    the answer, adjusts it and runs again has run two, and the honest N is the total. The
+    library cannot know that on its own -- each call sees one sweep -- so anything that
+    does know, such as a session that has watched you re-run four times, passes the
+    earlier trial Sharpes in and they are pooled into both N and V.
+    """
     net = sweep_.returns[:, index].astype(np.float64)
     bpy = sweep_.spec.bars_per_year
-    n_trials = int(np.count_nonzero(~sweep_.failed))
-    var_trials = sweep_.sharpe_variance
+    live = sweep_.sharpes[~sweep_.failed]
+
+    if prior_sharpes is not None and len(prior_sharpes):
+        pooled = np.concatenate([np.asarray(prior_sharpes, dtype=np.float64), live])
+        pooled = pooled[np.isfinite(pooled)]
+    else:
+        pooled = live[np.isfinite(live)]
+
+    n_trials = int(len(pooled))
+    var_trials = float(np.var(pooled, ddof=1)) if n_trials > 1 else 0.0
 
     observed = sharpe(net)
     dsr, sr0 = deflated_sharpe(net, n_trials, var_trials, observed_sr=observed)

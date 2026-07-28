@@ -50,6 +50,7 @@ Issues = "https://github.com/josephlangstroth-debug/falsify/issues"
 
 [project.scripts]
 falsify = "falsify.cli:main"
+falsify-gui = "falsify.gui:main"
 falsify-watch = "falsify.watch:main"
 
 [tool.setuptools.packages.find]
