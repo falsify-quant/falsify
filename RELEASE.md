@@ -68,10 +68,8 @@ question is whether to. Unresolved; see "The import-name decision" below.
       reused once uploaded — not even after deleting the file — so this is the last
       point at which a mistake is still free.
 
-      **Blocked until the repo is public.** Environment protection rules need a paid
-      plan on a private repo; `falsify-quant` is a free org. They are free on public
-      repos, so this becomes available the moment the visibility flips — which is
-      another reason to flip before releasing, not after.
+      **Now unblocked** — the repo is public, so protection rules are available on the
+      free plan. Settings → Environments → `pypi` → Required reviewers.
 
 ### The import-name decision
 
@@ -101,12 +99,19 @@ stayed green. `MANIFEST.in` now excludes them, and CI unpacks the sdist somewher
 entirely, installs it, and runs what it ships (288 tests), plus installs the wheel into a
 clean virtualenv and calls all three console scripts.
 
-## Before flipping public
+## Flipping public — done 2026-07-28
 
-- [ ] `git ls-files | grep -c private/` must print **0**. This is the one that matters —
-      `private/` holds live trading parameters, traded instruments, position sizing and
-      paths to databases with real account activity. Currently 0; re-check at the flip,
-      not once.
+The repository is public at `github.com/falsify-quant/falsify`.
+
+- [x] `git ls-files | grep -c private/` printed **0** at the moment of the flip, and so
+      did the stronger check: `private/` was never added in any of the 19 commits on any
+      branch. A file deleted from `HEAD` is still in the history and still becomes public.
+- [x] No credentials, keys, tokens or addresses in tracked content. Single author on every
+      commit, no trailers.
+- [x] **One real find, fixed before the flip:** the watch daemon's `CONFIG_EXAMPLE`
+      carried a live bot's actual parameters — instrument, bar size, cutover date and both
+      moving-average lengths — in a docstring inside the installed package. The audit is
+      not a formality; run it against content, not just against paths.
 - [x] CI green on all three operating systems. Six jobs: build, plus Python 3.10/3.12/3.13
       on Linux and 3.12 on macOS and Windows.
 - [x] Read Öztürk's `falsify` on PyPI first. Done — see the PyPI section above for what
