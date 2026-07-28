@@ -238,13 +238,23 @@ def test_a_malformed_body_does_not_take_the_server_down(live):
     assert _get(base + "/api/session")[0] == 200  # still alive
 
 
-def test_an_oversized_body_is_refused(live):
+def test_an_oversized_body_is_refused_with_an_answer_not_a_dropped_socket(live):
+    """The refusal has to reach the client, which means draining what it is still sending.
+
+    Answering 413 and closing looks correct and is not: on macOS the client's write fails
+    with ECONNRESET before it can read the response, so the caller learns only that the
+    connection died. Linux and Windows buffer enough to hide it, which is how this shipped
+    green on four runners and red on the fifth.
+    """
     base, _ = live
-    req = urllib.request.Request(base + "/api/run", data=b"x" * ((1 << 20) + 1),
+    req = urllib.request.Request(base + "/api/run", data=b"x" * ((1 << 20) + 1024),
                                  headers={"Content-Type": "application/json"})
     with pytest.raises(urllib.error.HTTPError) as e:
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=30)
     assert e.value.code == 413
+    assert json.loads(e.value.read())["error"] == "body too large"
+
+    assert _get(base + "/api/session")[0] == 200  # and the server is still up
 
 
 def test_a_bad_strategy_surfaces_in_the_page_not_the_console(live):

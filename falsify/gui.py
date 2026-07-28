@@ -51,6 +51,15 @@ __all__ = ["Investigation", "Run", "serve", "main"]
 
 MAX_BODY = 1 << 20  # a config blob, not an upload endpoint
 
+# How much of an over-long body to read and throw away before answering 413.
+#
+# Answering without draining looks correct and is not: the client is still writing when
+# the socket closes, so it sees the connection vanish rather than the refusal. Linux and
+# Windows happen to buffer enough to hide it; macOS returns ECONNRESET and the caller
+# never learns why it was rejected. Draining a bounded amount makes the refusal legible on
+# every platform without turning the cap into a suggestion.
+DRAIN_CAP = 8 << 20
+
 
 # --------------------------------------------------------------------------------------
 # Session state
@@ -296,6 +305,12 @@ class Handler(BaseHTTPRequestHandler):
         route = urlparse(self.path)
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
+            remaining = min(length, DRAIN_CAP)
+            while remaining > 0:
+                chunk = self.rfile.read(min(1 << 16, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
             return self._json({"error": "body too large"}, 413)
         try:
             payload = json.loads(self.rfile.read(length) or b"{}")
