@@ -44,9 +44,9 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.urls]
-Homepage = "https://github.com/falsify/falsify"
-Source = "https://github.com/falsify/falsify"
-Issues = "https://github.com/falsify/falsify/issues"
+Homepage = "https://github.com/josephlangstroth-debug/falsify"
+Source = "https://github.com/josephlangstroth-debug/falsify"
+Issues = "https://github.com/josephlangstroth-debug/falsify/issues"
 
 [project.scripts]
 falsify = "falsify.cli:main"

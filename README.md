@@ -1,6 +1,6 @@
 # falsify
 
-[![tests](https://github.com/falsify/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/falsify/falsify/actions/workflows/ci.yml)
+[![tests](https://github.com/josephlangstroth-debug/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/josephlangstroth-debug/falsify/actions/workflows/ci.yml)
 [![python](https://img.shields.io/pypi/pyversions/falsify-quant)](https://pypi.org/project/falsify-quant/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
@@ -43,7 +43,7 @@ numpy and scipy. Nothing else — no pandas, no build step, no account.
 From source:
 
 ```bash
-git clone https://github.com/falsify/falsify && cd falsify
+git clone https://github.com/josephlangstroth-debug/falsify && cd falsify
 pip install -e ".[dev]"
 ```
 
