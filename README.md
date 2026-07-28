@@ -78,6 +78,19 @@ python -m falsify strategies/trend.py --csv my_fills.csv --market crypto-spot
 
 Data loaders need no API keys — Coinbase public candles for crypto, Yahoo for equities. If you have real fills from your own bot, use those instead: your fills know things about slippage no free daily bar ever will.
 
+### Reference implementations
+
+`falsify.indicators` is a causal indicator set — EMA, Wilder smoothing, RSI, ATR, Bollinger, Keltner, Donchian, stochastic, %R — under one contract: `out[i]` depends on `x[:i+1]`, and warmup is NaN rather than backfilled. Every one of them is unit-tested by truncation, because a leak in the indicator layer is invisible in the signal layer.
+
+`strategies/canon.py` implements eighteen published rules against those primitives, each with a citation and **the parameters its own source named** — 50/200, RSI(14) at 30/70, Bollinger(20, 2), Turtle 20/10. Useful as a baseline, or to check your own implementation against something that has been made to prove it does not read ahead.
+
+```python
+from strategies.canon import by_name
+c = by_name("donchian")
+verdict = falsify.run(c.fn, bars=bars, spec=spec, grid=c.grid,
+                      valid=c.valid, params=c.shipped)   # score what the book says
+```
+
 ---
 
 ## The prosecution
@@ -229,7 +242,7 @@ It also renamed the library's `test_*` functions to `check_*`, because pytest wa
 python selftest.py
 ```
 
-Four known-answer cases. There are exactly two ways a tool like this can be worthless:
+Nine known-answer cases. There are exactly two ways a tool like this can be worthless:
 
 | | |
 |---|---|
@@ -250,6 +263,28 @@ Two things worth knowing, both discovered by these tests failing:
 **Not every leak is a leak.** Normalizing by full-sample mean and standard deviation is invisible to a `fast > slow` comparison, because an affine transform applied to both sides cancels. It only bites when compared against a constant. Whether preprocessing leaks depends on what you do with it downstream — which is why the causality test checks behavior rather than inspecting code.
 
 **"No signal" and "wrong instrument for the signal" look identical on an equity curve.** An earlier version of case C used AR(1) returns and failed. AR(1) momentum lives at lag 1 — autocorrelation decays as φ^k, so at φ=0.35 it's 0.35 at lag 1 and 0.004 by lag 5. A 20/90 crossover structurally cannot see it, no matter how large φ gets. The signal was real; the strategy was the wrong instrument. That distinction is now preserved as `momentum_market` vs `trending_market`.
+
+---
+
+## The corpus study
+
+Eighteen published rules × thirty instruments × three cadences, each scored **at the
+parameters its own source named**, not at the best of a grid.
+
+```bash
+python -m corpus.run          # resumable, deterministic per cell
+python -m corpus.aggregate    # writes corpus/FINDINGS.md and corpus/results.csv
+```
+
+Method and caveats in [`corpus/README.md`](corpus/README.md); results in
+[`corpus/FINDINGS.md`](corpus/FINDINGS.md). Aggregate statistics and per-strategy medians
+only — the study prosecutes the canon, which is scholarship, and does not point itself at
+named commercial products, which is a different activity.
+
+Every cell records the falsify version, the commit, the interpreter and library versions,
+the grid, the shipped parameters, and a SHA-256 fingerprint of the price series. Per-cell
+seeds derive from the cell's own identity rather than from a run counter, so a resumed
+run, a partial run and a single cell run in isolation all produce the same number.
 
 ---
 

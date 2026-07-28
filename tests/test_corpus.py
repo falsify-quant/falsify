@@ -319,8 +319,9 @@ def test_report_builds_and_contains_the_load_bearing_sections(tmp_path):
 
     md = build(run, cells, findings)
     for heading in ["What the study found", "Verdicts", "Which test does the killing",
-                    "By family", "What the search is worth", "Trading the same rule faster",
-                    "By strategy", "What this does not establish", "Reproducing it"]:
+                    "By family", "The short leg", "What the search is worth",
+                    "Trading the same rule faster", "By strategy",
+                    "What this does not establish", "Reproducing it"]:
         assert heading in md, f"missing section: {heading}"
 
     assert "abc1234" in md and "0.1.0" in md  # provenance survives into the report

@@ -291,6 +291,59 @@ def cadence_effect(cells: list[dict]) -> list[str]:
     ]
 
 
+def direction_effect(cells: list[dict]) -> list[str]:
+    """Long-only rules against symmetric ones, on the same instruments.
+
+    Read carefully. This is an observational split, not a controlled one: the two groups
+    are different rules, not one rule traded two ways. It is reported because the gap is
+    large and consistent, and because the mechanism is not mysterious -- a symmetric rule
+    spends a good share of its life short an asset class with a positive expected return,
+    and pays borrow for the privilege.
+    """
+    from strategies.canon import by_name
+
+    groups: dict[bool, list[dict]] = {True: [], False: []}
+    for c in cells:
+        try:
+            groups[by_name(c["strategy"]).long_only].append(c)
+        except KeyError:
+            continue
+    if not groups[True] or not groups[False]:
+        return []
+
+    def line(label: str, g: list[dict]) -> str:
+        s = [c["score"] for c in g]
+        sr = [c["sharpe_annual"] for c in g if c["sharpe_annual"] is not None]
+        good = sum(1 for c in g if c["label"] in ("SURVIVED", "PLAUSIBLE"))
+        names = sorted({c["strategy"] for c in g})
+        return (f"| {label} | {len(names)} | {len(g):,} | "
+                f"{_fmt(statistics.median(s))} | {_fmt(_q(s, 0.75))} | "
+                f"{_pct(good, len(g))} | "
+                f"{_fmt(statistics.median(sr), 2) if sr else '-'} |")
+
+    return [
+        "## The short leg",
+        "",
+        "| Rules | Distinct | Cells | Median | 75th | PLAUSIBLE+ | Median SR |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        line("Long only", groups[True]),
+        line("Long and short", groups[False]),
+        "",
+        "The same trend idea is in this study twice: `golden-cross` goes long above the "
+        "crossover and flat below it, `dual-ma` goes short instead of flat. They are not "
+        "the same strategy with a switch flipped -- different periods, different sources "
+        "-- so this is an observation rather than an experiment. But the direction of the "
+        "gap is consistent and the mechanism is not subtle: a symmetric rule spends much "
+        "of its life short an asset class with a positive expected return, and pays "
+        "financing to do it.",
+        "",
+        "Worth stating because the symmetric version is what gets taught. The long-only "
+        "reading is what the press reports and what the tactical-allocation literature "
+        "actually tested.",
+        "",
+    ]
+
+
 def asset_class_split(cells: list[dict]) -> list[str]:
     groups = defaultdict(list)
     for c in cells:
@@ -383,8 +436,9 @@ def build(run: dict, cells: list[dict], findings: dict) -> str:
     ]
     parts = [
         head, headline(cells, findings), by_label(cells), by_test(cells, findings),
-        by_family(cells), search_premium(cells), cadence_effect(cells),
-        asset_class_split(cells), by_strategy(cells), caveats(run, cells),
+        by_family(cells), direction_effect(cells), search_premium(cells),
+        cadence_effect(cells), asset_class_split(cells), by_strategy(cells),
+        caveats(run, cells),
     ]
     return "\n".join(line for part in parts for line in part).rstrip() + "\n"
 
