@@ -10,15 +10,14 @@ Nothing here blocks development; all of it blocks the first public link.
       Recorded for anyone repeating this: the GitHub API cannot tell you whether a name
       is claimable — it only ever proves a name is *taken* — so the web UI is the only
       real test.
-- [ ] **Transfer** the repo into it, so it lands at `falsify-quant/falsify`. Do not rename
-      the account instead: a username rename 404s every profile and gist link, and its
-      repository redirects die the moment anyone claims the freed username and creates a
-      matching repo name. Repo transfers are the sturdier mechanism, and a private repo
-      has no inbound links to break.
+- [x] **Transfer** the repo into it. Done 2026-07-28; it now lives at
+      `falsify-quant/falsify`, still private, Actions carried over enabled. The account
+      was deliberately *not* renamed instead: a username rename 404s every profile and
+      gist link, and its repository redirects die the moment anyone claims the freed
+      username and creates a matching repo name.
 - [x] Update the three places the URL is baked in: `pyproject.toml` (`[project.urls]`),
       the README badges and clone line, and the CONTRIBUTING clone line. All now point at
-      `falsify-quant/falsify`. **These are ahead of the transfer** — the badge and the
-      clone line are broken until it happens.
+      `falsify-quant/falsify`, and the transfer has caught up with them.
 
 ## PyPI
 
