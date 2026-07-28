@@ -1,12 +1,23 @@
 # falsify
 
 [![tests](https://github.com/falsify-quant/falsify/actions/workflows/ci.yml/badge.svg)](https://github.com/falsify-quant/falsify/actions/workflows/ci.yml)
+[![pypi](https://img.shields.io/pypi/v/falsify-quant)](https://pypi.org/project/falsify-quant/)
 [![python](https://img.shields.io/pypi/pyversions/falsify-quant)](https://pypi.org/project/falsify-quant/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 **You found a trading strategy that looks great in a backtest. This tells you whether it's real.**
 
 Not by agreeing with you. By spending seven separate attempts trying to prove it isn't.
+
+```bash
+pip install falsify-quant
+falsify-quant mystrategy.py --symbol SPY --market equity
+```
+
+We ran it against **890 backtests of eighteen published trading rules**, each at the
+parameters its own source named. The median scored **3.7 out of 100**, and **51% could not
+clear their own trading costs** before overfitting arose at all. That study is in
+[`corpus/FINDINGS.md`](corpus/FINDINGS.md), and reproducing it is two commands.
 
 ---
 
