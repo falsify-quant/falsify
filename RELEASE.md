@@ -50,6 +50,11 @@ CLI are unaffected — only the distribution name differs.
       reused once uploaded — not even after deleting the file — so this is the last
       point at which a mistake is still free.
 
+      **Blocked until the repo is public.** Environment protection rules need a paid
+      plan on a private repo; `falsify-quant` is a free org. They are free on public
+      repos, so this becomes available the moment the visibility flips — which is
+      another reason to flip before releasing, not after.
+
 ### The sdist has to be able to test itself
 
 `twine check` validates metadata and says nothing about whether the artefact works. The

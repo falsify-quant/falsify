@@ -7,6 +7,10 @@
 # It runs on a published GitHub release rather than on a tag push. A tag can be moved; a
 # release is a deliberate act with a human behind it, and PyPI uploads cannot be undone
 # -- a version number, once used, is used forever, even if the file is deleted.
+#
+# `workflow_dispatch` is a DRY RUN and cannot upload. Run it by hand to prove the pipeline
+# works -- build, test the artefact, confirm it installs -- without spending a version
+# number. Only a published release reaches the upload step.
 
 name: publish
 
@@ -63,9 +67,14 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    # A manual run builds and tests but stops here. Without this, `workflow_dispatch`
+    # would upload whatever version happens to be in pyproject -- and skip the tag check
+    # above, which only applies to releases -- burning a version number on a button press.
+    if: github.event_name == 'release'
     # Named so a required reviewer can be attached to it in repository settings. Without
     # one this is only a label; with one it is the last chance to stop an upload that
-    # cannot be taken back.
+    # cannot be taken back. NOTE: protection rules need a public repo or a paid plan --
+    # on a free org while private, the environment exists but the gate does nothing.
     environment: pypi
     permissions:
       id-token: write  # the OIDC token. Nothing else is needed, so nothing else is given.
