@@ -21,9 +21,27 @@ Nothing here blocks development; all of it blocks the first public link.
 
 ## PyPI
 
-The name `falsify` belongs to an actively maintained project (Cüneyt Öztürk, 17 releases,
-last 2026-07-17). Its import name is `mcp_server`, so `import falsify` and the `falsify`
-CLI are unaffected — only the distribution name differs.
+The name `falsify` belongs to an actively maintained project by Cüneyt Öztürk (MIT,
+0.3.11, Python ≥3.11) — a CLI that pre-registers an ML evaluation claim as a SHA-256
+manifest and later verifies PASS / FAIL / TAMPERED.
+
+**It collides with us in two places, and an earlier note here said it did not.** Read from
+the published wheel rather than the project description:
+
+```
+top_level.txt      falsify, falsify_prml, mcp_server
+console_scripts    falsify       = falsify_prml:main
+                   falsify-engine = falsify:main
+```
+
+- It ships a **top-level `falsify.py`**, so `import falsify` resolves to whichever of the
+  two is earlier on `sys.path` when both are installed. Silent, and the failure is a
+  confusing `AttributeError` rather than an `ImportError`.
+- It owns the **`falsify` console script**. Installing both leaves one shadowing the
+  other depending on install order.
+
+Distribution names do not reserve module names, so nothing prevents shipping ours — the
+question is whether to. Unresolved; see "The import-name decision" below.
 
 - [ ] **Create the pending publisher on PyPI** — Account → Publishing → *Add a new pending
       publisher*. It is "pending" because the project does not exist yet; PyPI creates it
@@ -55,6 +73,25 @@ CLI are unaffected — only the distribution name differs.
       repos, so this becomes available the moment the visibility flips — which is
       another reason to flip before releasing, not after.
 
+### The import-name decision
+
+Nothing blocks going public — this blocks the first *upload*, because the choice is
+permanent the moment anyone installs it. Three options, in the order they are worth
+considering:
+
+1. **Keep `falsify`.** No churn, and the collision only bites the small set of people who
+   install both an ML-eval pre-registration CLI and a backtest validator. But when it
+   bites it is silent, and being the second package to claim a module name is a poor
+   look for a project whose subject is rigour.
+2. **Rename the module to `falsify_quant`, matching the distribution.** `import
+   falsify_quant`, console script `falsify-quant`. Unambiguous forever, costs a
+   mechanical rename across the package, the tests, the README and three entry points.
+   Cheap now, expensive after anyone depends on it.
+3. **Keep the module, rename only the CLI** (`falsify-quant` as the command). Halves the
+   collision and leaves the silent half in place. Probably the worst of the three.
+
+Decide before the first release, not after.
+
 ### The sdist has to be able to test itself
 
 `twine check` validates metadata and says nothing about whether the artefact works. The
@@ -72,9 +109,13 @@ clean virtualenv and calls all three console scripts.
       not once.
 - [x] CI green on all three operating systems. Six jobs: build, plus Python 3.10/3.12/3.13
       on Linux and 3.12 on macOS and Windows.
-- [ ] Read Öztürk's `falsify` on PyPI first. It pre-registers ML evaluation claims as
-      SHA-256 hashes — the same pre-commitment idea as the planned attested reports,
-      applied to ML evals. Prior art worth understanding before designing ours.
+- [x] Read Öztürk's `falsify` on PyPI first. Done — see the PyPI section above for what
+      it is and the two namespace collisions it creates. On the prior-art question the
+      answer is reassuring: it locks a *claim* (metric, threshold, dataset hash, seed)
+      **before** an experiment runs and later verifies the result against it, whereas
+      `falsify/attest.py` signs a *finished verdict* and re-derives its arithmetic from
+      the findings. Pre-registration versus post-hoc tamper-evidence — adjacent, not
+      overlapping, and the two compose rather than compete.
 
 ## Launch content
 

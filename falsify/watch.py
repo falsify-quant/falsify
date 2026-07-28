@@ -379,23 +379,26 @@ def run_forever(
 # Running it from a config file
 # --------------------------------------------------------------------------------------
 
+# Illustrative values only. The whole reason this daemon is configured from a file rather
+# than from flags is that a live deployment's paths, instruments and parameters should
+# never end up in a repository -- so this example does not contain any.
 CONFIG_EXAMPLE = """\
 {
-  "database": "/mnt/user/appdata/bot/trader.db",
+  "database": "/srv/bot/trader.db",
   "market": "crypto-spot",
-  "state": "/mnt/user/appdata/falsify/watch-state.json",
+  "state": "/var/lib/falsify/watch-state.json",
   "poll_seconds": 300,
   "heartbeat_seconds": 21600,
   "expected_interval_seconds": 3600,
-  "since": "2026-07-23",
+  "since": "2025-01-01",
   "strategy": {
-    "file": "/mnt/user/appdata/falsify/live_strategy.py",
-    "params": {"fast": 480, "slow": 1200}
+    "file": "/etc/falsify/live_strategy.py",
+    "params": {"fast": 20, "slow": 100}
   },
   "symbols": {"BTC-USD": {"interval": "1h", "bars": 5000}},
   "sinks": [
     {"kind": "log"},
-    {"kind": "file", "path": "/mnt/user/appdata/falsify/events.jsonl"},
+    {"kind": "file", "path": "/var/log/falsify/events.jsonl"},
     {"kind": "webhook", "url": "https://example.invalid/hook"}
   ]
 }
