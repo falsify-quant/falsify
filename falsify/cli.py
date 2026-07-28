@@ -4,6 +4,12 @@
     python -m falsify mystrategy.py --symbol AAPL   --market equity
     python -m falsify mystrategy.py --csv prices.csv --market crypto-spot
 
+Add `--attest` to write a tamper-evident copy of the verdict alongside the report, and
+`--verify FILE` to check one somebody sent you:
+
+    python -m falsify mystrategy.py --symbol AAPL --attest
+    python -m falsify --verify their-verdict.json
+
 Your strategy file needs two names at module level:
 
     def strategy(bars, fast=10, slow=50):   # bars in, target weights out
@@ -122,6 +128,47 @@ def _load_csv(path: Path, symbol: str | None) -> Bars:
     )
 
 
+def _parse_anchor(text: str | None, parser) -> dict | None:
+    if not text:
+        return None
+    kind, sep, ref = text.partition("=")
+    if not sep or not ref.strip():
+        parser.error(f"--anchor wants KIND=REF, got {text!r} "
+                     f"(e.g. git=https://github.com/you/repo/commit/abc123)")
+    return {"kind": kind.strip(), "ref": ref.strip()}
+
+
+def _verify(path: Path) -> int:
+    """Check an attestation somebody handed you. Non-zero exit means do not trust it."""
+    from .attest import read_attestation, verify
+
+    try:
+        att = read_attestation(path)
+    except (OSError, ValueError) as exc:
+        print(f"{RED}cannot read {path}: {exc}{RESET}", file=sys.stderr)
+        return 2
+
+    result = verify(att)
+    band = GREEN if result.ok and not result.warnings else (YELLOW if result.ok else RED)
+    print(f"{band}{BOLD}{result.summary()}{RESET}")
+    print(f"{DIM}{att.label} {att.score:.0f}/100 · "
+          f"{att.body.get('subject', {}).get('symbol', '?')} · "
+          f"created {att.created_utc}{RESET}")
+    print(f"{DIM}sha256 {att.content_hash}{RESET}\n")
+
+    for c in result.checks:
+        mark, colour = ("ok", GREEN) if c.ok else (
+            ("warn", YELLOW) if c.severity == "warning" else ("FAIL", RED))
+        print(f"  {colour}{mark:>4}{RESET}  {BOLD}{c.name}{RESET}")
+        print(f"        {c.detail}")
+
+    if result.ok:
+        print(f"\n{DIM}Intact means the arithmetic in front of you is the arithmetic that "
+              f"was done. It is not a claim that the strategy works, and — without an "
+              f"anchor — not a claim about when this was produced.{RESET}")
+    return 0 if result.ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     _utf8_console()
     p = argparse.ArgumentParser(
@@ -130,7 +177,14 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    p.add_argument("strategy", type=Path, help="python file defining strategy() and GRID")
+    p.add_argument("strategy", type=Path, nargs="?",
+                   help="python file defining strategy() and GRID")
+    p.add_argument("--verify", type=Path, metavar="FILE",
+                   help="check an attestation and exit; exits non-zero if tampered")
+    p.add_argument("--attest", nargs="?", const=True, default=None, metavar="FILE",
+                   help="also write a tamper-evident verdict (default: alongside --out)")
+    p.add_argument("--anchor", metavar="KIND=REF",
+                   help="where the hash was published, e.g. git=https://.../commit/abc")
     p.add_argument("--market", default="equity", choices=sorted(PRESETS),
                    help="cost model preset (default: equity)")
     src = p.add_mutually_exclusive_group()
@@ -145,6 +199,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", type=Path, default=Path("falsify-report.html"))
     p.add_argument("--no-open", action="store_true", help="do not open the report")
     args = p.parse_args(argv)
+
+    if args.verify:
+        return _verify(args.verify)
+    if args.strategy is None:
+        p.error("need a strategy file, or --verify FILE")
 
     mod = _load_module(args.strategy)
     spec = PRESETS[args.market]
@@ -194,6 +253,19 @@ def main(argv: list[str] | None = None) -> int:
 
     out = write_report(verdict, args.out)
     print(f"\n{DIM}report: {out.resolve()}{RESET}")
+
+    if args.attest is not None:
+        from .attest import ANCHOR_HELP, attest, write_attestation
+
+        dest = Path(args.attest) if args.attest is not True else out.with_suffix(".attest.json")
+        att = attest(verdict, strategy_source=args.strategy,
+                     anchor=_parse_anchor(args.anchor, p))
+        write_attestation(att, dest)
+        print(f"{DIM}attestation: {dest.resolve()}{RESET}")
+        print(f"{BOLD}sha256 {att.content_hash}{RESET}")
+        if not att.anchor:
+            print(f"\n{YELLOW}This document dates itself, which proves nothing — you "
+                  f"chose the date.{RESET}\n{DIM}{ANCHOR_HELP}{RESET}")
 
     if not args.no_open:
         import webbrowser

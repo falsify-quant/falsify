@@ -45,6 +45,7 @@ from __future__ import annotations
 
 from typing import Callable, Mapping, Sequence
 
+from .attest import Attestation, attest, read_attestation, verify, write_attestation
 from .harness import Sweep, sweep
 from .prosecute import (
     Finding,
@@ -69,6 +70,11 @@ __all__ = [
     "run_universe",
     "UniverseVerdict",
     "write_report",
+    "attest",
+    "verify",
+    "Attestation",
+    "read_attestation",
+    "write_attestation",
     "Bars",
     "MarketSpec",
     "PRESETS",
