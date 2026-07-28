@@ -195,6 +195,38 @@ Three of the five are exact. Only the envelope is statistical, and it's scoped t
 
 **A live equity curve is not a return series.** Deposits and withdrawals move it without anyone trading, and a funding event dwarfs any edge — a $300 deposit read as +203% in one step and turned a +5% month into +897%. Flows are detected and chain-linked around, then *reported* rather than silently dropped, because a violent move on a concentrated book can trip the same heuristic.
 
+### Leaving it running
+
+```bash
+falsify-watch --example > watch.json    # edit it
+falsify-watch watch.json --check        # validate config and strategy, poll nothing
+falsify-watch watch.json                # daemon
+falsify-watch watch.json --once         # one cycle, for cron
+```
+
+The loop is worth less than what it refuses to say. Four rules:
+
+**Only transitions notify.** A divergence that has been alarming for six hours is one
+piece of news, not seventy-two.
+
+**Recoveries are news too.** An alarm that stopped because it resolved and one that
+stopped because the daemon died look identical from outside.
+
+**Silence is a claim, so it's earned.** A heartbeat goes out on a fixed schedule whatever
+the alert state — the absence of one is itself the signal. The first run always beats,
+because "the watchdog is up" is the most useful thing it ever says.
+
+**Flapping is throttled, not hidden.** A check that toggles every poll is a threshold
+sitting on top of the data. The useful message is "this flapped nine times in an hour",
+once, not nine alerts.
+
+State is kept on disk and written atomically, so a restart doesn't re-announce everything
+it already told you, and a kill mid-write doesn't leave a truncated file. A failure inside
+the monitor becomes an event rather than an exception — a locked trading database is not a
+reason to stop watching it.
+
+---
+
 ## Scoring
 
 A **weighted geometric mean**, not an arithmetic one. That's a deliberate epistemic choice: a strategy is only as good as its weakest leg, and averaging lets one fatal flaw hide behind five comfortable passes. Under a geometric mean, any component near zero drags the whole score to zero — which is correct, because an edge that doesn't clear its trading costs is worth nothing no matter how stable its parameter surface is.
