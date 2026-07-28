@@ -77,7 +77,15 @@ jobs:
           python -m venv /tmp/wheelenv
           /tmp/wheelenv/bin/python -m pip install --upgrade pip
           /tmp/wheelenv/bin/python -m pip install dist/*.whl
-          /tmp/wheelenv/bin/python -c "import falsify_quant; print(falsify_quant.__name__)"
+          # 0.1.1 shipped to PyPI reporting itself as 0.1.0, because the number lived in
+          # two places. It goes into the hashed body of every attestation, so a stale
+          # copy makes a tamper-evidence document misstate its own provenance.
+          /tmp/wheelenv/bin/python -c "
+          import importlib.metadata as m, falsify_quant
+          assert falsify_quant.__version__ == m.version('falsify-quant'), (
+              falsify_quant.__version__, m.version('falsify-quant'))
+          print('version agrees:', falsify_quant.__version__)
+          "
           /tmp/wheelenv/bin/falsify-quant --help > /dev/null
           /tmp/wheelenv/bin/falsify-quant-gui --help > /dev/null
           /tmp/wheelenv/bin/falsify-quant-watch --help > /dev/null

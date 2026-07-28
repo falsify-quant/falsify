@@ -43,6 +43,8 @@ program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
+from importlib import metadata as _metadata
+
 from typing import Callable, Mapping, Sequence
 
 from .attest import Attestation, attest, read_attestation, verify, write_attestation
@@ -62,7 +64,14 @@ from .spec import PRESETS, Bars, MarketSpec
 from .stats import annualise, sharpe
 from .universe import UniverseVerdict, run_universe
 
-__version__ = "0.1.0"
+# Read from the installed distribution rather than repeated here. The two had already
+# drifted once -- 0.1.1 shipped reporting 0.1.0 -- and this string is not cosmetic: it
+# goes into the hashed body of every attestation, so a stale copy would make a
+# tamper-evidence document misstate the provenance of its own arithmetic.
+try:  # pragma: no cover - trivial, and the fallback needs a source checkout to reach
+    __version__ = _metadata.version("falsify-quant")
+except _metadata.PackageNotFoundError:  # running from a checkout that was never installed
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "run",

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "falsify-quant"
-version = "0.1.1"
+version = "0.1.2"
 description = "Prove your trading strategy is nothing, before the market does."
 readme = "README.md"
 requires-python = ">=3.10"
