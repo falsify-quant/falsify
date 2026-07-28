@@ -63,13 +63,18 @@ question is whether to. Unresolved; see "The import-name decision" below.
       permission it holds, and there is no secret to leak or rotate.
 - [x] `python -m build && twine check dist/*` before the first upload. Verified clean: the
       wheel contains `falsify/` only, no `private/`, no `strategies/`, no `corpus/`.
-- [ ] Attach a required reviewer to the `pypi` environment in repository settings.
-      Without one the environment is only a label. A PyPI version number cannot be
-      reused once uploaded — not even after deleting the file — so this is the last
-      point at which a mistake is still free.
+- [x] Required reviewer on the `pypi` environment — Settings → Environments → `pypi`.
+      A PyPI version number cannot be reused once uploaded, not even after deleting the
+      file, so this is the last point at which a mistake is still free.
 
-      **Now unblocked** — the repo is public, so protection rules are available on the
-      free plan. Settings → Environments → `pypi` → Required reviewers.
+      Two things about it that are not obvious. **The environment does not exist until a
+      job that references it actually runs**, and the dry run skips that job by design —
+      so Settings → Environments stays empty and there is no environment to configure.
+      It has to be created directly. And **`prevent_self_review` is off deliberately**:
+      with one maintainer, turning it on would mean nobody could ever approve a release.
+      What this gate buys with a single maintainer is a deliberate pause on an
+      irreversible action, not a second pair of eyes. Worth turning on the moment there
+      is a second person.
 
 ### The import-name decision
 
