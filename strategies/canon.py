@@ -496,6 +496,18 @@ class Candidate:
     title: str
     family: str  # trend | breakout | reversion | seasonal
     source: str
+    # What the *source* tested it on, taken from the source and nothing else. This is the
+    # rule's home turf, and it is not always available here: `futures` in particular has
+    # no matching instrument in this universe, so those rules are never given a fair test.
+    #
+    #   equity-index   the source tested equity indices or index ETFs
+    #   futures        the source tested commodity or financial futures
+    #   cross-asset    the source tested a futures panel spanning several asset classes
+    #   unstated       folklore, or a source that names no particular market
+    #
+    # Assigned by reading each citation, not by looking at scores. The labels are listed
+    # in FINDINGS.md so the assignment can be disputed on its merits.
+    domain: str
     fn: Callable[..., np.ndarray]
     shipped: dict[str, float]
     grid: dict[str, Sequence[float]]
@@ -529,6 +541,7 @@ CANON: list[Candidate] = [
         name="golden-cross",
         title="Golden cross (50/200 simple moving average)",
         family="trend",
+        domain="equity-index",
         source="Brock, Lakonishok & LeBaron (1992), Journal of Finance 47(5)",
         fn=golden_cross,
         shipped={"fast": 50, "slow": 200},
@@ -541,6 +554,7 @@ CANON: list[Candidate] = [
         name="dual-ma",
         title="Dual moving average crossover, long and short",
         family="trend",
+        domain="unstated",
         source="Folklore; the symmetric reading of the crossover taught in most courses",
         fn=dual_ma,
         shipped={"fast": 20, "slow": 100},
@@ -551,6 +565,7 @@ CANON: list[Candidate] = [
         name="price-vs-ma",
         title="Price above its 200-day mean (Faber tactical overlay)",
         family="trend",
+        domain="equity-index",
         source="Faber (2007), 'A Quantitative Approach to Tactical Asset Allocation'",
         fn=price_vs_ma,
         shipped={"n": 200},
@@ -563,6 +578,7 @@ CANON: list[Candidate] = [
         name="tsmom",
         title="Time-series momentum, 12-month lookback",
         family="trend",
+        domain="cross-asset",
         source="Moskowitz, Ooi & Pedersen (2012), Journal of Financial Economics 104(2)",
         fn=tsmom,
         shipped={"lookback": 252},
@@ -572,6 +588,7 @@ CANON: list[Candidate] = [
         name="triple-ma",
         title="Triple moving average stack (5/20/60)",
         family="trend",
+        domain="unstated",
         source="Folklore; no identifiable primary source",
         fn=triple_ma,
         shipped={"fast": 5, "mid": 20, "slow": 60},
@@ -582,6 +599,7 @@ CANON: list[Candidate] = [
         name="macd",
         title="MACD histogram crossover (12/26/9)",
         family="trend",
+        domain="unstated",
         source="Appel (1979), 'The Moving Average Convergence-Divergence Method'",
         fn=macd_cross,
         shipped={"fast": 12, "slow": 26, "signal": 9},
@@ -592,6 +610,7 @@ CANON: list[Candidate] = [
         name="vol-target-trend",
         title="Volatility-targeted 50/200 trend",
         family="trend",
+        domain="equity-index",
         source="Harvey et al. (2018), 'The Impact of Volatility Targeting', JPM 45(1)",
         fn=vol_target_trend,
         shipped={"fast": 50, "slow": 200, "vol_n": 20, "cap": 3.0, "target_n": 252},
@@ -605,6 +624,7 @@ CANON: list[Candidate] = [
         name="donchian",
         title="Donchian channel breakout, 20-day entry / 10-day exit (Turtle System 1)",
         family="breakout",
+        domain="futures",
         source="Faith (2007), 'Way of the Turtle'; rules taught by Richard Dennis, 1983",
         fn=donchian,
         shipped={"entry": 20, "exit": 10},
@@ -617,6 +637,7 @@ CANON: list[Candidate] = [
         name="bollinger-breakout",
         title="Bollinger band breakout (20, 2.0)",
         family="breakout",
+        domain="unstated",
         source="Bollinger (2001), 'Bollinger on Bollinger Bands'",
         fn=bollinger_breakout,
         shipped={"n": 20, "k": 2.0},
@@ -626,6 +647,7 @@ CANON: list[Candidate] = [
         name="keltner-breakout",
         title="Keltner channel breakout (20, 2.0 ATR)",
         family="breakout",
+        domain="futures",
         source="Keltner (1960), modern ATR formulation popularised by Linda Raschke",
         fn=keltner_breakout,
         shipped={"n": 20, "k": 2.0, "atr_n": 10},
@@ -636,6 +658,7 @@ CANON: list[Candidate] = [
         name="chandelier",
         title="Chandelier exit traded as a system (22-day, 3 ATR)",
         family="breakout",
+        domain="futures",
         source="Chuck LeBeau, 'Computer Analysis of the Futures Markets' (1992)",
         fn=chandelier,
         shipped={"n": 22, "k": 3.0},
@@ -646,6 +669,7 @@ CANON: list[Candidate] = [
         name="rsi-reversion",
         title="RSI(14) oversold/overbought at 30/70",
         family="reversion",
+        domain="futures",
         source="Wilder (1978), 'New Concepts in Technical Trading Systems'",
         fn=rsi_reversion,
         shipped={"n": 14, "low": 30, "high": 70},
@@ -656,6 +680,7 @@ CANON: list[Candidate] = [
         name="rsi2-connors",
         title="Connors RSI(2) below 5, filtered by the 200-day mean",
         family="reversion",
+        domain="equity-index",
         source="Connors & Alvarez (2008), 'Short Term Trading Strategies That Work'",
         fn=rsi2_connors,
         shipped={"n": 2, "entry": 5, "exit": 70, "trend": 200},
@@ -666,6 +691,7 @@ CANON: list[Candidate] = [
         name="bollinger-reversion",
         title="Bollinger band fade (20, 2.0)",
         family="reversion",
+        domain="unstated",
         source="Bollinger (2001), 'Bollinger on Bollinger Bands'",
         fn=bollinger_reversion,
         shipped={"n": 20, "k": 2.0},
@@ -676,6 +702,7 @@ CANON: list[Candidate] = [
         name="stochastic",
         title="Stochastic oscillator (14, 3) at 20/80",
         family="reversion",
+        domain="futures",
         source="George Lane, popularised from the late 1950s",
         fn=stochastic_reversion,
         shipped={"n": 14, "smooth": 3, "low": 20, "high": 80},
@@ -687,6 +714,7 @@ CANON: list[Candidate] = [
         name="williams-r",
         title="Williams %R(14) at -80/-20",
         family="reversion",
+        domain="futures",
         source="Larry Williams (1973)",
         fn=williams_r_reversion,
         shipped={"n": 14, "low": -80, "high": -20},
@@ -698,6 +726,7 @@ CANON: list[Candidate] = [
         name="n-down-days",
         title="Buy after three down closes above the 200-day mean",
         family="reversion",
+        domain="equity-index",
         source="Connors & Alvarez (2008); widely reproduced without the trend filter",
         fn=n_down_days,
         shipped={"n": 3, "trend": 200},
@@ -708,6 +737,7 @@ CANON: list[Candidate] = [
         name="turn-of-month",
         title="Turn-of-month seasonal window",
         family="seasonal",
+        domain="equity-index",
         source="Ariel (1987), JFE 18(1); Lakonishok & Smidt (1988), RFS 1(4)",
         fn=turn_of_month,
         shipped={"before": 1, "after": 3},

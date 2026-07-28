@@ -15,6 +15,8 @@ The question is not whether these rules can be made to look good -- anything can
 - **51% could not clear their own trading costs** at retail rates, before any question of overfitting arises.
 - **No cell failed the causality gate.** Expected, and worth stating plainly: these are clean-room implementations written against a truncation test. The lookahead rate in *published implementations* is a different study, and this one does not measure it.
 
+**Read that median with `Home turf` below, not on its own.** It pools every rule over every instrument, including rules run in markets their sources never claimed. Scored where their own authors tested them, the rules with a matching venue here have a median of **56.9**, and 7 of the eighteen have no matching venue in this universe at all. The pooled figure is the right answer to "what happens if you take the canon and point it at whatever you can download", which is what most people do -- and the wrong answer to "does this rule work".
+
 ## Verdicts
 
 | Verdict | Cells | Share |
@@ -104,6 +106,31 @@ Bar size is not a free parameter. A rule pays its costs per decision, and moving
 | crypto | daily-matched | 180 | 3.7 | 6% | 4.6 |
 | crypto | hourly | 170 | 0.6 | 0% | 4.6 |
 | equity | daily | 360 | 11.6 | 12% | 23.8 |
+
+## Home turf
+
+A rule tested somewhere its author never claimed it worked is not being tested. Every citation was read and labelled with the market **the source itself used**, before any of these scores were looked at:
+
+| Domain in the source | Rules |
+|---|---|
+| `equity-index` | `golden-cross`, `n-down-days`, `price-vs-ma`, `rsi2-connors`, `turn-of-month`, `vol-target-trend` |
+| `futures` | `chandelier`, `donchian`, `keltner-breakout`, `rsi-reversion`, `stochastic`, `williams-r` |
+| `cross-asset` | `tsmom` |
+| `unstated` | `bollinger-breakout`, `bollinger-reversion`, `dual-ma`, `macd`, `triple-ma` |
+
+For the six rules whose sources tested equity indices, this universe contains the matching venue. On daily bars, scored on index ETFs against everywhere else:
+
+- **On home turf: median 56.9**, 50% reaching PLAUSIBLE or better, across 36 cells.
+- Everywhere else: median 18.8, across 144 cells.
+- The study-wide median is 3.7.
+
+**That is the single largest effect in this study, and it qualifies the headline number rather than sitting beside it.** A good part of the overall median is rules being scored in markets they never claimed.
+
+**Six of the eighteen rules have no home turf here at all.** `chandelier`, `donchian`, `keltner-breakout`, `rsi-reversion`, `stochastic`, `williams-r` come from commodity and financial futures — Wilder and Lane developed on commodities, the Turtles traded futures, and LeBeau's book has it in the title. **This universe contains no futures.** Their median of 0.7 across 180 daily cells is therefore not a verdict on them; it is a measurement of what happens when you take a futures system to equities and crypto, which is what most retail platforms invite you to do.
+
+Stated plainly because it cuts against the study: a third of the canon here was never given a fair test, and fixing that needs futures data this does not have.
+
+The rules whose sources name no market at all — `bollinger-breakout`, `bollinger-reversion`, `dual-ma`, `macd`, `triple-ma` — sit at a median of 3.5. There is nowhere to move them to. A rule that never said where it worked cannot be defended on the grounds that it was being tested in the wrong place.
 
 ## By strategy
 

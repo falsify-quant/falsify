@@ -251,3 +251,60 @@ def test_the_two_bollinger_readings_disagree():
     active = both & ((up != 0) | (fade != 0))
     assert active.sum() > 50
     assert np.corrcoef(up[active], fade[active])[0, 1] < 0.0
+
+
+# --------------------------------------------------------------------------------------
+# Home turf
+# --------------------------------------------------------------------------------------
+
+
+def test_every_rule_declares_where_its_source_tested_it():
+    """The `Home turf` section of the study is only meaningful if this is complete."""
+    allowed = {"equity-index", "futures", "cross-asset", "unstated"}
+    for c in CANON:
+        assert c.domain in allowed, f"{c.name} has domain {c.domain!r}"
+
+
+def test_the_domain_labels_are_pinned_to_the_citations():
+    """Frozen deliberately.
+
+    These labels decide which cells count as a fair test, and they were written down
+    after the scores existed. That is the exact situation in which a label quietly drifts
+    toward whatever makes the result cleaner. Changing one now means changing this list,
+    in a diff, next to the citation it is supposed to come from.
+    """
+    expected = {
+        "golden-cross": "equity-index",       # Brock/Lakonishok/LeBaron tested the DJIA
+        "price-vs-ma": "equity-index",        # Faber, broad asset-class indices
+        "vol-target-trend": "equity-index",   # Harvey et al, equity indices
+        "rsi2-connors": "equity-index",       # Connors & Alvarez, equity index ETFs
+        "n-down-days": "equity-index",        # Connors & Alvarez
+        "turn-of-month": "equity-index",      # Ariel; Lakonishok & Smidt
+        "donchian": "futures",                # Turtles, commodity/financial futures
+        "keltner-breakout": "futures",        # Keltner (1960), commodities
+        "chandelier": "futures",              # LeBeau, futures markets
+        "rsi-reversion": "futures",           # Wilder (1978), commodities
+        "stochastic": "futures",              # Lane, commodity futures
+        "williams-r": "futures",              # Larry Williams, commodities
+        "tsmom": "cross-asset",               # Moskowitz et al, 58-futures panel
+        "dual-ma": "unstated",
+        "triple-ma": "unstated",
+        "macd": "unstated",
+        "bollinger-breakout": "unstated",
+        "bollinger-reversion": "unstated",
+    }
+    assert {c.name: c.domain for c in CANON} == expected
+
+
+def test_no_rule_is_labelled_by_how_well_it_scored():
+    """A label assigned from the outcome would put every winner on home turf.
+
+    If `equity-index` had been reverse-engineered from the scores, the futures group
+    would be a leftover bin of losers. It is not: it contains rules from named primary
+    sources across four decades, and the split cuts across the family taxonomy rather
+    than following it.
+    """
+    futures = {c.family for c in CANON if c.domain == "futures"}
+    equity = {c.family for c in CANON if c.domain == "equity-index"}
+    assert len(futures) > 1 and len(equity) > 1
+    assert futures & equity, "the two groups must share at least one family"

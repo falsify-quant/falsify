@@ -33,7 +33,9 @@ falsify-quant mystrategy.py --symbol SPY --market equity
 
 We ran it against **890 backtests of eighteen published trading rules**, each at the
 parameters its own source named. The median scored **3.7 out of 100**, and **51% could not
-clear their own trading costs** before overfitting arose at all. That study is in
+clear their own trading costs** before overfitting arose at all — but read that alongside
+the *Home turf* section, because scored in the markets their own authors actually tested,
+the same rules median **56.9**. Both numbers are in
 [`corpus/FINDINGS.md`](corpus/FINDINGS.md), and reproducing it is two commands.
 
 ---

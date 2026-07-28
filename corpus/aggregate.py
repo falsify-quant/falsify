@@ -96,6 +96,25 @@ def _fmt(x: float, nd: int = 1) -> str:
 # --------------------------------------------------------------------------------------
 
 
+def _home_turf_cells(cells: list[dict]) -> tuple[list[dict], int]:
+    """Daily cells scored where their source tested, and how many rules have no such venue.
+
+    Shared so the headline and the `Home turf` section cannot drift apart -- the whole
+    point of that section is that the headline number should not be read without it.
+    """
+    try:
+        from strategies.canon import CANON
+    except Exception:  # pragma: no cover
+        return [], 0
+    domains = {c.name: c.domain for c in CANON}
+    matched = [c for c in cells
+               if c["cadence"] == "daily"
+               and domains.get(c["strategy"]) == "equity-index"
+               and _venue(c) == "equity index ETF"]
+    homeless = sum(1 for c in CANON if c.domain in ("futures", "cross-asset"))
+    return matched, homeless
+
+
 def headline(cells: list[dict], findings: dict) -> list[str]:
     scores = [c["score"] for c in cells]
     labels = defaultdict(int)
@@ -135,6 +154,20 @@ def headline(cells: list[dict], findings: dict) -> list[str]:
                    "plainly: these are clean-room implementations written against a "
                    "truncation test. The lookahead rate in *published implementations* is "
                    "a different study, and this one does not measure it.")
+    matched, homeless = _home_turf_cells(cells)
+    if matched:
+        out += [
+            "",
+            f"**Read that median with `Home turf` below, not on its own.** It pools every "
+            f"rule over every instrument, including rules run in markets their sources "
+            f"never claimed. Scored where their own authors tested them, the rules with a "
+            f"matching venue here have a median of "
+            f"**{_fmt(statistics.median([c['score'] for c in matched]))}**, and "
+            f"{homeless} of the eighteen have no matching venue in this universe at all. "
+            f"The pooled figure is the right answer to \"what happens if you take the "
+            f"canon and point it at whatever you can download\", which is what most people "
+            f"do -- and the wrong answer to \"does this rule work\".",
+        ]
     out.append("")
     return out
 
@@ -454,6 +487,128 @@ def asset_class_split(cells: list[dict]) -> list[str]:
     return rows
 
 
+# Equity index ETFs in this universe. Broad-market baskets, as distinct from the single
+# names and the bond/commodity funds, because "index" is the home turf several of these
+# rules were written for and the distinction is load-bearing below.
+INDEX_ETFS = frozenset({"SPY", "QQQ", "DIA", "IWM", "EEM", "EFA"})
+OTHER_ETFS = frozenset({"TLT", "GLD", "USO"})
+
+
+def _venue(cell: dict) -> str:
+    if cell["asset_class"] == "crypto":
+        return "crypto"
+    if cell["symbol"] in INDEX_ETFS:
+        return "equity index ETF"
+    if cell["symbol"] in OTHER_ETFS:
+        return "bond/commodity ETF"
+    return "single stock"
+
+
+def home_turf(cells: list[dict]) -> list[str]:
+    """Score each rule where its own source said it worked, and where it did not.
+
+    Added after publication, because a reader pointed out that running an index-reversion
+    rule on an altcoin is not a test of the rule. They were right, and the correction is
+    large enough that the headline median cannot be read without it.
+
+    This is a subgroup analysis proposed after seeing the results, which is the exact
+    move this library exists to be suspicious of. Two things keep it honest, and neither
+    makes it a controlled experiment: the domain labels come from reading each citation
+    rather than from the scores, and they are printed below so the assignment can be
+    argued with.
+    """
+    try:
+        from strategies.canon import CANON
+    except Exception:  # pragma: no cover - the study cannot run without the canon anyway
+        return []
+
+    domains = {c.name: c.domain for c in CANON}
+    daily = [c for c in cells if c["cadence"] == "daily" and c["strategy"] in domains]
+    if not daily:
+        return []
+
+    by_domain = defaultdict(list)
+    for c in CANON:
+        by_domain[c.domain].append(c.name)
+
+    matched = [c for c in daily
+               if domains[c["strategy"]] == "equity-index" and _venue(c) == "equity index ETF"]
+    away = [c for c in daily
+            if domains[c["strategy"]] == "equity-index" and _venue(c) != "equity index ETF"]
+    if not matched or not away:
+        return []
+
+    all_med = statistics.median([c["score"] for c in cells])
+    m_med = statistics.median([c["score"] for c in matched])
+    a_med = statistics.median([c["score"] for c in away])
+    m_good = sum(1 for c in matched if c["label"] in ("SURVIVED", "PLAUSIBLE"))
+
+    out = [
+        "## Home turf",
+        "",
+        "A rule tested somewhere its author never claimed it worked is not being tested. "
+        "Every citation was read and labelled with the market **the source itself used**, "
+        "before any of these scores were looked at:",
+        "",
+        "| Domain in the source | Rules |",
+        "|---|---|",
+    ]
+    for dom in ("equity-index", "futures", "cross-asset", "unstated"):
+        if by_domain.get(dom):
+            out.append(f"| `{dom}` | {', '.join(f'`{n}`' for n in sorted(by_domain[dom]))} |")
+    out += [
+        "",
+        f"For the six rules whose sources tested equity indices, this universe contains "
+        f"the matching venue. On daily bars, scored on index ETFs against everywhere "
+        f"else:",
+        "",
+        f"- **On home turf: median {_fmt(m_med)}**, {_pct(m_good, len(matched))} reaching "
+        f"PLAUSIBLE or better, across {len(matched)} cells.",
+        f"- Everywhere else: median {_fmt(a_med)}, across {len(away)} cells.",
+        f"- The study-wide median is {_fmt(all_med)}.",
+        "",
+        "**That is the single largest effect in this study, and it qualifies the headline "
+        "number rather than sitting beside it.** A good part of the overall median is "
+        "rules being scored in markets they never claimed.",
+        "",
+    ]
+
+    # The finding that actually matters, and the one nobody asked about.
+    futures = sorted(by_domain.get("futures", []))
+    if futures:
+        f_cells = [c for c in daily if domains[c["strategy"]] == "futures"]
+        f_med = statistics.median([c["score"] for c in f_cells]) if f_cells else float("nan")
+        out += [
+            f"**Six of the eighteen rules have no home turf here at all.** "
+            f"{', '.join(f'`{n}`' for n in futures)} come from commodity and financial "
+            f"futures — Wilder and Lane developed on commodities, the Turtles traded "
+            f"futures, and LeBeau's book has it in the title. **This universe contains no "
+            f"futures.** Their median of {_fmt(f_med)} across {len(f_cells)} daily cells "
+            f"is therefore not a verdict on them; it is a measurement of what happens "
+            f"when you take a futures system to equities and crypto, which is what most "
+            f"retail platforms invite you to do.",
+            "",
+            "Stated plainly because it cuts against the study: a third of the canon here "
+            "was never given a fair test, and fixing that needs futures data this does "
+            "not have.",
+            "",
+        ]
+
+    # The counterweight: matching the domain does not rescue everything.
+    unstated = [c for c in daily if domains[c["strategy"]] == "unstated"]
+    if unstated:
+        u_med = statistics.median([c["score"] for c in unstated])
+        out += [
+            f"The rules whose sources name no market at all — "
+            f"{', '.join(f'`{n}`' for n in sorted(by_domain['unstated']))} — sit at a "
+            f"median of {_fmt(u_med)}. There is nowhere to move them to. A rule that "
+            f"never said where it worked cannot be defended on the grounds that it was "
+            f"being tested in the wrong place.",
+            "",
+        ]
+    return out
+
+
 def caveats(run: dict, cells: list[dict]) -> list[str]:
     fps = sorted({(c["symbol"], c["cadence"], c["fingerprint"]) for c in cells})
     env = json.loads(run["environment"]) if run["environment"] else {}
@@ -530,7 +685,7 @@ def build(run: dict, cells: list[dict], findings: dict) -> str:
         head, headline(cells, findings), by_label(cells), by_test(cells, findings),
         by_family(cells), direction_effect(cells), search_premium(cells),
         window_effect(cells), cadence_effect(cells), asset_class_split(cells),
-        by_strategy(cells), caveats(run, cells),
+        home_turf(cells), by_strategy(cells), caveats(run, cells),
     ]
     return "\n".join(line for part in parts for line in part).rstrip() + "\n"
 
