@@ -159,6 +159,27 @@ def test_seasonal_rules_are_not_run_on_hourly_bars():
     assert "turn-of-month" in {c.name for c, _, cd in cells if cd == "daily"}
 
 
+def test_the_matched_window_is_actually_planned():
+    """The cadence comparison is the study's sharpest claim and it is opt-in by plan().
+
+    A candidate declares the bar *sizes* it is meaningful at, so `daily-matched` has to be
+    matched against `daily`. Comparing the label directly drops every matched cell without
+    an error, and the study still finishes -- just with nothing to compare.
+    """
+    cells = plan(CANON, by_class("crypto"), ("daily", "hourly", "daily-matched"))
+    matched = {c.name for c, _, cd in cells if cd == "daily-matched"}
+    daily = {c.name for c, _, cd in cells if cd == "daily"}
+    assert matched == daily, "the matched window does not cover the same rules as daily"
+    assert len(matched) == len(CANON)
+
+
+def test_matched_and_hourly_pair_up_for_every_symbol():
+    cells = plan(CANON, by_class("crypto"), ("hourly", "daily-matched"))
+    pairs = {(c.name, a.symbol) for c, a, cd in cells if cd == "hourly"}
+    matched = {(c.name, a.symbol) for c, a, cd in cells if cd == "daily-matched"}
+    assert pairs <= matched, "an hourly cell has no matched-window counterpart"
+
+
 def test_equities_are_daily_only():
     cells = plan(CANON, EQUITIES, ("daily", "hourly", "daily-matched"))
     assert {cd for _, _, cd in cells} == {"daily"}
@@ -320,7 +341,7 @@ def test_report_builds_and_contains_the_load_bearing_sections(tmp_path):
     md = build(run, cells, findings)
     for heading in ["What the study found", "Verdicts", "Which test does the killing",
                     "By family", "The short leg", "What the search is worth",
-                    "Trading the same rule faster", "By strategy",
+                    "Choosing the window", "Trading the same rule faster", "By strategy",
                     "What this does not establish", "Reproducing it"]:
         assert heading in md, f"missing section: {heading}"
 

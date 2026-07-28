@@ -273,9 +273,10 @@ def cadence_effect(cells: list[dict]) -> list[str]:
         "on hourly. Same rule, same parameters, same instrument, same dates, same cost per "
         "unit of turnover. The only difference is how often the rule is allowed to act.",
         "",
-        "The matched window matters. Hourly history from a free endpoint runs out after a "
-        "few years, so comparing it against a full daily history compares two different "
-        "markets and attributes the difference to the bar size.",
+        "The matched window is not a nicety. Hourly history from a free endpoint runs out "
+        "after a few years, so comparing it against a full daily history compares two "
+        "different markets and blames the bar size. See the section above for how much "
+        "damage that does -- it was enough to reverse this study's first conclusion.",
         "",
         f"- Median score **{_fmt(statistics.median(d_scores))} daily** vs "
         f"**{_fmt(statistics.median(h_scores))} hourly** across {len(pairs)} matched pairs.",
@@ -340,6 +341,66 @@ def direction_effect(cells: list[dict]) -> list[str]:
         "Worth stating because the symmetric version is what gets taught. The long-only "
         "reading is what the press reports and what the tactical-allocation literature "
         "actually tested.",
+        "",
+    ]
+
+
+def window_effect(cells: list[dict]) -> list[str]:
+    """Same rule, same asset, same bar size, different stretch of history.
+
+    This comparison exists because the cadence comparison needed it. The first run showed
+    the golden cross scoring 82 on eight years of daily bitcoin and 6 on hourly, which
+    reads as a devastating verdict on trading faster -- until the same rule on the *same
+    window* at daily scored 7.5. Almost all of the collapse was the window.
+
+    Length and period move together here and cannot be separated: the shorter sample is
+    also the more recent one, and a shorter sample is penalised on its own merits because
+    deflation is less forgiving when there is less evidence. The comparison is reported as
+    "choice of window" rather than as either one.
+    """
+    by_key: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    for c in cells:
+        if c["asset_class"] == "crypto":
+            by_key[(c["strategy"], c["symbol"])][c["cadence"]] = c
+
+    pairs = [(v["daily"], v["daily-matched"]) for v in by_key.values()
+             if "daily" in v and "daily-matched" in v]
+    if len(pairs) < 5:
+        return []
+
+    full = [f["score"] for f, _ in pairs]
+    short = [s["score"] for _, s in pairs]
+    flipped = sum(1 for f, s in pairs
+                  if f["label"] in ("SURVIVED", "PLAUSIBLE")
+                  and s["label"] not in ("SURVIVED", "PLAUSIBLE"))
+    good_full = sum(1 for f, _ in pairs if f["label"] in ("SURVIVED", "PLAUSIBLE"))
+    yrs_full = statistics.median([f["years"] for f, _ in pairs])
+    yrs_short = statistics.median([s["years"] for _, s in pairs])
+
+    return [
+        "## Choosing the window",
+        "",
+        f"The same rules, the same instruments, the same daily bars — scored over all "
+        f"available history (median {_fmt(yrs_full, 1)} years) and then over only the "
+        f"most recent stretch (median {_fmt(yrs_short, 1)} years).",
+        "",
+        f"- Median score **{_fmt(statistics.median(full))} on the full history** vs "
+        f"**{_fmt(statistics.median(short))} on the recent window**, across "
+        f"{len(pairs)} pairs.",
+        f"- **{flipped} of {good_full}** rules that reached PLAUSIBLE or better on the "
+        f"full history failed to on the shorter one.",
+        "",
+        "Two effects are tangled here and cannot be separated with this design: the "
+        "shorter window is also the *more recent* one, and a shorter sample is penalised "
+        "on its own merits, because deflation is less forgiving when there is less "
+        "evidence to deflate. Both are real, and both are things a backtester chooses.",
+        "",
+        "This section exists because it changed a conclusion. The cadence comparison "
+        "below initially looked like a rout — a rule scoring 82 daily and 6 hourly — "
+        "until the same rule over the same window at daily scored 7.5. Nearly all of that "
+        "gap was the window, and attributing it to the bar size would have been wrong. "
+        "The date range is a researcher degree of freedom like any other, and it is the "
+        "one nobody reports.",
         "",
     ]
 
@@ -437,8 +498,8 @@ def build(run: dict, cells: list[dict], findings: dict) -> str:
     parts = [
         head, headline(cells, findings), by_label(cells), by_test(cells, findings),
         by_family(cells), direction_effect(cells), search_premium(cells),
-        cadence_effect(cells), asset_class_split(cells), by_strategy(cells),
-        caveats(run, cells),
+        window_effect(cells), cadence_effect(cells), asset_class_split(cells),
+        by_strategy(cells), caveats(run, cells),
     ]
     return "\n".join(line for part in parts for line in part).rstrip() + "\n"
 

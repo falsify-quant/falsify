@@ -199,6 +199,12 @@ def _dumps(obj) -> str:
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
+    # Long studies get split across processes -- equity in one, crypto in another, a
+    # single strategy re-run in a third. Each commit is a handful of rows and holds the
+    # write lock for milliseconds, so waiting is always the right answer and the default
+    # five-second timeout is the wrong one: losing an hour of finished cells to a lock
+    # collision is a far worse outcome than a paused commit.
+    con.execute("PRAGMA busy_timeout = 60000")
     con.executescript(SCHEMA)
     return con
 
@@ -357,7 +363,11 @@ def plan(strategies: list[Candidate], assets: list[Asset],
             if cd not in cadences:
                 continue
             for c in strategies:
-                if cd not in c.cadences:
+                # A candidate declares the *bar sizes* it is meaningful at, so the
+                # matched-window cadence is checked as the daily series it actually is.
+                # Comparing the cadence label directly drops every matched cell on the
+                # floor without a word, which is exactly what it did.
+                if base_cadence(cd) not in c.cadences:
                     continue
                 out.append((c, a, cd))
     return out
