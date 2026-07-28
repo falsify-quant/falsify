@@ -203,6 +203,47 @@ A test that could not be computed scores zero. In a tool whose entire job is ske
 
 ---
 
+## Attested verdicts
+
+A verdict is more useful as a *credential* than as a tool. Nobody pays to be told their
+own strategy is nothing; people do care what a stranger's strategy is worth before wiring
+money at it.
+
+```bash
+falsify mystrategy.py --symbol AAPL --attest
+falsify --verify their-verdict.json     # exit 1 if tampered, 2 if unreadable
+```
+
+Verification does not merely re-hash. It **recomputes the headline score from the
+individual findings** using the published weights, and checks that every scored test is
+still present. That closes the two cheap forgeries:
+
+| Forgery | Caught by |
+|---|---|
+| Raise the score | content hash |
+| Raise the score *and* re-hash | score arithmetic — it now contradicts its own findings |
+| Raise one finding and re-hash | score arithmetic |
+| **Delete the test that failed**, recompute over the rest | coverage — the arithmetic is correct over what remains, so only the missing test gives it away |
+| Delete the causality gate | its own check — causality is a gate, not a weighted term, so coverage would not see it |
+
+The strategy source is **fingerprinted, not embedded** — you can attest without publishing
+your code, and prove the match later if you ever hand it over.
+
+**What it cannot do, stated plainly:** an attestation carries whatever date its author
+typed, and nothing inside the document can contradict that. There is a test asserting
+backdating is undetectable. To make the date mean something, publish the hash somewhere
+with a clock you don't control and record where:
+
+```bash
+falsify mystrategy.py --symbol AAPL --attest --anchor git=https://github.com/you/r/commit/abc
+```
+
+Publish the hash **first**, then let time pass, then show the results. A hash published
+afterwards proves only that you can use a hash function. Without an anchor, `verify`
+reports the date as a caveat rather than passing it silently.
+
+---
+
 ## Guards against silent corruption
 
 Two mistakes that survive code review and quietly invalidate everything:
@@ -216,7 +257,7 @@ Two mistakes that survive code review and quietly invalidate everything:
 ## Two test suites, answering different questions
 
 ```bash
-pytest          # 57 unit tests: is the arithmetic right?
+pytest               # 437 unit tests: is the arithmetic right?
 python selftest.py   # 9 known-answer cases: does it measure anything?
 ```
 
