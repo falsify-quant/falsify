@@ -1,0 +1,77 @@
+# Publishing to PyPI, without a token.
+#
+# The upload is authenticated by a short-lived OIDC identity GitHub mints for this
+# workflow in this repository, which PyPI has been told in advance to trust. There is no
+# API token in the repository secrets, so there is nothing to leak, rotate or revoke.
+#
+# It runs on a published GitHub release rather than on a tag push. A tag can be moved; a
+# release is a deliberate act with a human behind it, and PyPI uploads cannot be undone
+# -- a version number, once used, is used forever, even if the file is deleted.
+
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+
+      # Publishing is irreversible, so the gate is stricter than the one on `main`: the
+      # artefact that is about to be uploaded is the artefact that gets tested, not a
+      # source checkout that resembles it.
+      - name: Test the sdist that is about to be published
+        run: |
+          mkdir -p /tmp/sdist && tar xzf dist/*.tar.gz -C /tmp/sdist --strip-components=1
+          cd /tmp/sdist
+          python -m pip install ".[dev]"
+          pytest -q
+
+      - name: The version must match the tag
+        if: github.event_name == 'release'
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+          tag = os.environ["TAG"].lstrip("v")
+          text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          version = re.search(r'^version = "([^"]+)"', text, re.M).group(1)
+          if version != tag:
+              sys.exit(f"tag {tag!r} does not match pyproject version {version!r}")
+          print(f"tag and version agree: {version}")
+          PY
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Named so a required reviewer can be attached to it in repository settings. Without
+    # one this is only a label; with one it is the last chance to stop an upload that
+    # cannot be taken back.
+    environment: pypi
+    permissions:
+      id-token: write  # the OIDC token. Nothing else is needed, so nothing else is given.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

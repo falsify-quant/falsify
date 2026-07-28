@@ -1,0 +1,22 @@
+# The sdist ships the tests that exercise the *package*, and nothing that would arrive
+# unable to run.
+#
+# `tests/test_canon.py` and `tests/test_corpus.py` cover `strategies/` and `corpus/`,
+# which are repository content rather than part of the distribution — the catalogue is
+# reference material and the study needs a sqlite database and a price feed. Shipping
+# those two files without their subjects put a `ModuleNotFoundError` at collection time
+# in the sdist, so `pytest` on an unpacked tarball failed before it ran a single test.
+# They are excluded rather than fixed because the alternative is shipping a study
+# harness inside a library.
+exclude tests/test_canon.py
+exclude tests/test_corpus.py
+
+# Not part of the distribution, and each is a different kind of wrong to ship: `private/`
+# holds live trading configuration, `reports/` is generated output, and `study.db` is a
+# several-megabyte research artefact.
+prune private
+prune reports
+prune corpus
+prune strategies
+global-exclude *.db
+global-exclude *.pyc

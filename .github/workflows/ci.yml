@@ -57,3 +57,27 @@ jobs:
           python -m pip install --upgrade pip build twine
           python -m build
           python -m twine check dist/*
+
+      # `twine check` reads the metadata and says nothing about whether the thing works.
+      # The sdist once shipped two test files whose subjects -- `strategies/` and
+      # `corpus/` -- are repository content and were not in the tarball, so `pytest` on
+      # an unpacked release died at collection while every job here stayed green.
+      # Unpack it somewhere else entirely, install it, and run what it ships.
+      - name: The sdist must be able to test itself
+        run: |
+          mkdir -p /tmp/sdist && tar xzf dist/*.tar.gz -C /tmp/sdist --strip-components=1
+          cd /tmp/sdist
+          python -m pip install ".[dev]"
+          pytest -q
+
+      # Installing from the wheel is a separate question from importing from a source
+      # checkout, and the console scripts are the part a user touches first.
+      - name: The wheel must install and expose its entry points
+        run: |
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/python -m pip install --upgrade pip
+          /tmp/wheelenv/bin/python -m pip install dist/*.whl
+          /tmp/wheelenv/bin/python -c "import falsify; print(falsify.__name__)"
+          /tmp/wheelenv/bin/falsify --help > /dev/null
+          /tmp/wheelenv/bin/falsify-gui --help > /dev/null
+          /tmp/wheelenv/bin/falsify-watch --help > /dev/null
