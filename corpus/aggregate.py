@@ -154,19 +154,21 @@ def headline(cells: list[dict], findings: dict) -> list[str]:
                    "plainly: these are clean-room implementations written against a "
                    "truncation test. The lookahead rate in *published implementations* is "
                    "a different study, and this one does not measure it.")
-    matched, homeless = _home_turf_cells(cells)
+    matched, _ = _home_turf_cells(cells)
     if matched:
         out += [
             "",
             f"**Read that median with `Home turf` below, not on its own.** It pools every "
             f"rule over every instrument, including rules run in markets their sources "
-            f"never claimed. Scored where their own authors tested them, the rules with a "
-            f"matching venue here have a median of "
-            f"**{_fmt(statistics.median([c['score'] for c in matched]))}**, and "
-            f"{homeless} of the eighteen have no matching venue in this universe at all. "
-            f"The pooled figure is the right answer to \"what happens if you take the "
-            f"canon and point it at whatever you can download\", which is what most people "
-            f"do -- and the wrong answer to \"does this rule work\".",
+            f"never claimed. Scored where their own authors tested them, the equity-index "
+            f"rules median "
+            f"**{_fmt(statistics.median([c['score'] for c in matched]))}**. The futures "
+            f"systems, given futures, do not recover the same way -- but the contracts "
+            f"they were actually developed on are the ones whose free data could not be "
+            f"trusted, so that comparison is narrower than it looks. Both are in "
+            f"`Home turf`. The pooled figure is the right answer to \"what happens if you "
+            f"take the canon and point it at whatever you can download\", which is what "
+            f"most people do -- and the wrong answer to \"does this rule work\".",
         ]
     out.append("")
     return out
@@ -576,23 +578,59 @@ def home_turf(cells: list[dict]) -> list[str]:
     # The finding that actually matters, and the one nobody asked about.
     futures = sorted(by_domain.get("futures", []))
     if futures:
-        f_cells = [c for c in daily if domains[c["strategy"]] == "futures"]
-        f_med = statistics.median([c["score"] for c in f_cells]) if f_cells else float("nan")
+        away = [c for c in daily
+                if domains[c["strategy"]] == "futures" and c["asset_class"] != "futures"]
+        f_med = statistics.median([c["score"] for c in away]) if away else float("nan")
         out += [
-            f"**Six of the eighteen rules have no home turf here at all.** "
+            f"**A third of the canon is not from this universe at all.** "
             f"{', '.join(f'`{n}`' for n in futures)} come from commodity and financial "
             f"futures — Wilder and Lane developed on commodities, the Turtles traded "
-            f"futures, and LeBeau's book has it in the title. **This universe contains no "
-            f"futures.** Their median of {_fmt(f_med)} across {len(f_cells)} daily cells "
-            f"is therefore not a verdict on them; it is a measurement of what happens "
-            f"when you take a futures system to equities and crypto, which is what most "
-            f"retail platforms invite you to do.",
-            "",
-            "Stated plainly because it cuts against the study: a third of the canon here "
-            "was never given a fair test, and fixing that needs futures data this does "
-            "not have.",
+            f"futures, and LeBeau's book has it in the title. Their median of "
+            f"{_fmt(f_med)} across {len(away)} equity and crypto cells is therefore not a "
+            f"verdict on them; it measures what happens when a futures system is pointed "
+            f"at equities and crypto, which is what most retail platforms invite you to "
+            f"do. Whether that is the *only* reason they fail is answered directly below, "
+            f"because futures were added to find out.",
             "",
         ]
+
+    # The direct test of the gap named above, once futures were added.
+    fut_cells = [c for c in cells if c["asset_class"] == "futures"]
+    if fut_cells:
+        fut_rules = [c for c in fut_cells if domains.get(c["strategy"]) == "futures"]
+        other_rules = [c for c in fut_cells if domains.get(c["strategy"]) != "futures"]
+        away = [c for c in daily
+                if domains.get(c["strategy"]) == "futures" and c["asset_class"] != "futures"]
+        if fut_rules and other_rules:
+            out += [
+                "### Then the futures rules were given futures",
+                "",
+                f"Seven contracts were added to close the gap above. **It did not go the "
+                f"way the equity-index result did.** The six futures systems score a "
+                f"median of **{_fmt(statistics.median([c['score'] for c in fut_rules]))}** "
+                f"on futures, against "
+                f"{_fmt(statistics.median([c['score'] for c in away]))} on the equities "
+                f"and crypto they were never meant for. Home turf bought them nothing. "
+                f"They are the bottom six rules in the table below, and every other rule "
+                f"in the canon beats them on their own ground "
+                f"({_fmt(statistics.median([c['score'] for c in other_rules]))} median).",
+                "",
+                "**This is not the finding it looks like, and the reason is the data.** "
+                "Only contracts whose free continuous series could be validated are here: "
+                "metals, soybeans, and the financials. Crude, natural gas and corn are "
+                "excluded because their series carry no roll return and overstate what is "
+                "achievable by up to 23%/yr. Those excluded markets are a large part of "
+                "where these systems were actually developed and traded -- the Turtles "
+                "were in energy and grains, not in copper. So the honest statement is "
+                "narrow: **the futures systems did not recover on the futures that can be "
+                "trusted here, and those are not the futures they were built for.**",
+                "",
+                "One further reason to read this narrowly: most of what does well on "
+                "futures is on `ES=F`, an equity index contract, and it is the "
+                "equity-index rules that do it. That is the section above reappearing "
+                "rather than anything about futures.",
+                "",
+            ]
 
     # The counterweight: matching the domain does not rescue everything.
     unstated = [c for c in daily if domains[c["strategy"]] == "unstated"]
@@ -619,6 +657,16 @@ def caveats(run: dict, cells: list[dict]) -> list[str]:
         "a few dozen combinations. The real search behind `RSI(14) at 30/70` is fifty "
         "years of practitioners trying everything and publishing what worked. Every score "
         "here is therefore an **upper bound**.",
+        "",
+        "**The futures series are front-month splices, and three markets were dropped "
+        "because of it.** Free continuous futures data carries no roll return, so it "
+        "tracks something spot-like that nobody can hold. Measured against a fund that "
+        "does hold the asset, the wedge is 0.3%/yr for gold and 23.3%/yr for natural "
+        "gas. Anything above ~1.5%/yr was excluded, which removed crude, natural gas and "
+        "corn -- a large part of where the futures systems in this canon were actually "
+        "developed. What remains is metals, soybeans and the financials, and even there "
+        "the series is a splice rather than a back-adjusted contract. Doing this properly "
+        "needs data that costs money.",
         "",
         "**Survivorship runs through the whole asset list.** Every instrument still "
         "trades. Companies that went to zero are absent; delisted crypto is absent twice "

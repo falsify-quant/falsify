@@ -186,9 +186,16 @@ def test_equities_are_daily_only():
 
 
 def test_plan_respects_the_cadence_filter():
+    """Derived from ALL rather than from a list of classes.
+
+    Written the other way it counted equities and crypto by hand, so adding futures broke
+    a test about cadence filtering for reasons that had nothing to do with cadence.
+    """
     cells = plan(CANON, ALL, ("daily",))
     assert {cd for _, _, cd in cells} == {"daily"}
-    assert len(cells) == len(EQUITIES) * len(CANON) + len(CRYPTO) * len(CANON)
+    eligible = [a for a in ALL if "daily" in cadences_for(a)]
+    assert len(cells) == len(eligible) * len(CANON)
+    assert len(eligible) == len(ALL), "every class in this universe runs daily"
 
 
 def test_every_asset_has_a_spec_and_an_interval():

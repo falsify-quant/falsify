@@ -43,7 +43,12 @@ import numpy as np
 
 import falsify_quant
 from falsify_quant.harness import sweep
-from falsify_quant.spec import CRYPTO_SPOT_TAKER, EQUITY_LIQUID, MarketSpec
+from falsify_quant.spec import (
+    CRYPTO_SPOT_TAKER,
+    EQUITY_LIQUID,
+    FUTURES_LIQUID,
+    MarketSpec,
+)
 
 from . import cache
 from .assets import ALL, Asset
@@ -53,7 +58,8 @@ DB_PATH = Path(__file__).resolve().parent / "study.db"
 
 # History requested per cadence. Equity is capped by what Yahoo will return; crypto by
 # how far back Coinbase listed the pair.
-BARS = {"daily-equity": 6000, "daily-crypto": 3000, "hourly-crypto": 40000}
+BARS = {"daily-equity": 6000, "daily-crypto": 3000, "hourly-crypto": 40000,
+        "daily-futures": 6000}
 
 # Crypto is run at three settings, not two. `daily-matched` is the daily series clipped
 # to exactly the window the hourly series covers.
@@ -66,6 +72,7 @@ BARS = {"daily-equity": 6000, "daily-crypto": 3000, "hourly-crypto": 40000}
 CADENCE_SETS = {
     "equity": ("daily",),
     "crypto": ("daily", "hourly", "daily-matched"),
+    "futures": ("daily",),
 }
 
 
@@ -80,6 +87,8 @@ def base_cadence(cadence: str) -> str:
 
 
 def spec_for(asset: Asset, cadence: str) -> MarketSpec:
+    if asset.asset_class == "futures":
+        return FUTURES_LIQUID
     if asset.asset_class == "equity":
         return EQUITY_LIQUID
     if base_cadence(cadence) == "daily":
@@ -96,7 +105,7 @@ def bars_for(asset: Asset, cadence: str) -> int:
 
 
 def cadences_for(asset: Asset) -> tuple[str, ...]:
-    """Equity is daily only -- there is no free intraday history worth studying."""
+    """Equity and futures are daily only -- no free intraday history worth studying."""
     return CADENCE_SETS[asset.asset_class]
 
 
@@ -385,7 +394,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="asset symbol; repeatable")
     ap.add_argument("--cadence", action="append", default=None,
                     choices=["daily", "hourly", "daily-matched"])
-    ap.add_argument("--asset-class", choices=["equity", "crypto"], default=None)
+    ap.add_argument("--asset-class", choices=sorted({a.asset_class for a in ALL}),
+                    default=None)
     ap.add_argument("--fresh", action="store_true", help="ignore completed cells")
     ap.add_argument("--refresh-data", action="store_true", help="re-download every series")
     ap.add_argument("--warm-only", action="store_true", help="fill the cache and stop")

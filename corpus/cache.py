@@ -69,7 +69,8 @@ class Entry:
 
 
 def _entry(symbol: str, asset_class: str, interval: str) -> Entry:
-    safe = symbol.replace("/", "-").replace("\\", "-")
+    # `=` is legal on POSIX and awkward everywhere else, and every futures ticker has one.
+    safe = symbol.replace("/", "-").replace("\\", "-").replace("=", "_")
     return Entry(symbol, asset_class, interval,
                  CACHE_DIR / f"{asset_class}_{safe}_{interval}.npz")
 

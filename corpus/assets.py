@@ -25,19 +25,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["Asset", "EQUITIES", "CRYPTO", "ALL", "by_class"]
+__all__ = ["Asset", "EQUITIES", "CRYPTO", "FUTURES", "ALL", "by_class"]
 
 
 @dataclass(frozen=True)
 class Asset:
     symbol: str
-    asset_class: str  # equity | crypto
-    kind: str  # index | sector | commodity | bond | single-name | major | alt
+    asset_class: str  # equity | crypto | futures
+    kind: str  # index | sector | commodity | bond | single-name | major | alt | metal
+    #            | grain | financial
     note: str = ""
 
     @property
     def cadence(self) -> str:
-        return "daily" if self.asset_class == "equity" else "hourly"
+        return "hourly" if self.asset_class == "crypto" else "daily"
 
 
 EQUITIES: list[Asset] = [
@@ -80,7 +81,44 @@ CRYPTO: list[Asset] = [
     Asset("DOT-USD", "crypto", "alt", ""),
 ]
 
-ALL: list[Asset] = EQUITIES + CRYPTO
+# Futures, added because six rules in the canon are futures systems that had no matching
+# venue here -- Wilder and Lane developed on commodities, the Turtles traded futures, and
+# LeBeau's book has it in the title.
+#
+# **The free data is only usable for some of them, and the cut is measured, not judged.**
+# Yahoo's `=F` series are front-month splices carrying no roll return, so they track
+# something spot-like that nobody can hold. Measured against a fund that does hold the
+# asset, over the longest common window:
+#
+#     gold      GC=F vs GLD    +0.3%/yr      silver    SI=F vs SLV    +0.4%/yr
+#     soybean   ZS=F vs SOYB   -0.9%/yr      copper    HG=F vs CPER   +1.2%/yr
+#     corn      ZC=F vs CORN   +4.2%/yr      crude     CL=F vs USO    +7.9%/yr
+#     nat gas   NG=F vs UNG   +23.3%/yr
+#
+# Anything above ~1.5%/yr is excluded: on `CL=F` the continuous series returns +20% over
+# twenty years while USO returns -77%, so a long-biased rule would bank a return nobody
+# could have earned. The control is `ES=F` vs `SPY` at -1.9%/yr, which is the dividend
+# yield with the sign the method predicts -- that is what says the number is carry rather
+# than noise.
+#
+# The financial contracts carry no ETF comparison, and are included on the different
+# ground that their basis is a financing rate rather than a storage cost: small,
+# mechanical, and without the storage dynamics that produce a 23%/yr wedge in gas.
+#
+# What survives is a real limitation and is stated in the study: energy and the grains are
+# where several of these systems were actually developed, and they are exactly where the
+# free data cannot support the test.
+FUTURES: list[Asset] = [
+    Asset("GC=F", "futures", "metal", "gold; roll drag 0.3%/yr measured against GLD"),
+    Asset("SI=F", "futures", "metal", "silver; 0.4%/yr against SLV"),
+    Asset("HG=F", "futures", "metal", "copper; 1.2%/yr against CPER"),
+    Asset("ZS=F", "futures", "grain", "soybeans; -0.9%/yr against SOYB, mild backwardation"),
+    Asset("ES=F", "futures", "financial", "S&P 500; the roll-drag control"),
+    Asset("ZN=F", "futures", "financial", "10-year Treasury note"),
+    Asset("6E=F", "futures", "financial", "euro FX"),
+]
+
+ALL: list[Asset] = EQUITIES + CRYPTO + FUTURES
 
 
 def by_class(asset_class: str) -> list[Asset]:

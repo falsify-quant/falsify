@@ -25,6 +25,7 @@ __all__ = [
     "CRYPTO_SPOT_TAKER",
     "EQUITY_LIQUID",
     "EQUITY_SMALLCAP",
+    "FUTURES_LIQUID",
     "PRESETS",
 ]
 
@@ -227,11 +228,29 @@ EQUITY_SMALLCAP = MarketSpec(
     carry_on="short",
 )
 
+FUTURES_LIQUID = MarketSpec(
+    name="Liquid futures, front month, retail",
+    asset_class="futures",
+    bars_per_year=252,
+    # Cheap, and cheap in a way that matters: most of the canon this is used to test was
+    # designed on futures, where a round turn is a couple of dollars against a notional
+    # in the hundreds of thousands. Charging equity rates would fail these rules on costs
+    # for a reason their authors never faced. ES: ~$2.50/side commission and a 0.25-point
+    # tick worth $12.50, both against roughly $300k of notional.
+    fee=0.00002,  # ~0.2 bp
+    half_spread=0.0001,  # ~1 bp; one tick on the liquid contracts, wider on the grains
+    # No borrow. A short future is not a borrowed asset, it is the other side of a
+    # contract, and treating it like equity shorting would invent a cost that does not
+    # exist -- which matters here because most futures systems are symmetric.
+    carry=0.0,
+)
+
 PRESETS: dict[str, MarketSpec] = {
     "crypto-perp": CRYPTO_PERP_TAKER,
     "crypto-spot": CRYPTO_SPOT_TAKER,
     "equity": EQUITY_LIQUID,
     "equity-smallcap": EQUITY_SMALLCAP,
+    "futures": FUTURES_LIQUID,
 }
 
 
