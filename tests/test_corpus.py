@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -105,6 +106,43 @@ def test_describe_reports_the_window():
     assert d["bars"] == 100
     assert d["first"] < d["last"]
     assert len(d["fingerprint"]) == 16
+
+
+def _entry_with_age(tmp_path, hours: float | None):
+    """A cache entry whose sidecar claims it was fetched *hours* ago (None = no sidecar)."""
+    e = cache.Entry("X", "crypto", "1h", tmp_path / "crypto_X_1h.npz")
+    np.savez(e.path, close=np.ones(10), ts=np.arange(10, dtype=float), symbol=np.array("X"))
+    if hours is not None:
+        when = datetime.now(timezone.utc) - timedelta(hours=hours)
+        e.path.with_suffix(".json").write_text(
+            json.dumps({"fetched_utc": when.isoformat(timespec="seconds")}), encoding="utf-8")
+    return e
+
+
+@pytest.mark.parametrize("hours,interval,stale", [
+    (0.1, "1h", False),   # fetched minutes ago, hourly bars -> still current
+    (2.0, "1h", True),    # a bar has closed since -> a refetch would add data
+    (2.0, "1d", False),   # two hours is nothing to a daily series
+    (30.0, "1d", True),   # more than a day -> stale
+])
+def test_cache_entry_expires_after_one_bar_interval(tmp_path, hours, interval, stale):
+    e = _entry_with_age(tmp_path, hours)
+    assert cache._is_stale(e, interval) is stale
+
+
+def test_cache_entry_without_provenance_is_treated_as_stale(tmp_path):
+    """Entries written before the sidecar existed must heal themselves rather than be
+    served forever. This module recorded `fetched_utc` and then never read it back, so
+    a cached series was returned no matter how old it was -- which is how two machines
+    came to hold different data under the same filename and score the same strategy
+    30 points apart (2026-08-01). Provenance you do not act on is not provenance."""
+    assert cache._is_stale(_entry_with_age(tmp_path, None), "1d") is True
+
+
+def test_cache_entry_with_unparseable_provenance_is_treated_as_stale(tmp_path):
+    e = _entry_with_age(tmp_path, 0.1)
+    e.path.with_suffix(".json").write_text("{not json", encoding="utf-8")
+    assert cache._is_stale(e, "1h") is True
 
 
 # --------------------------------------------------------------------------------------

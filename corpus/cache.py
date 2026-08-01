@@ -80,6 +80,35 @@ def _to_bars(z, symbol: str) -> Bars:
     return Bars(symbol=str(z["symbol"]) if "symbol" in z.files else symbol, **kw)
 
 
+# Seconds per bar. An entry cannot be improved by refetching until a further bar has
+# closed, which makes "one interval" the principled expiry rather than an arbitrary TTL.
+_INTERVAL_S = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400}
+
+
+def _is_stale(e: Entry, interval: str) -> bool:
+    """True when the entry is old enough that a refetch would add at least one bar.
+
+    This module already recorded `fetched_utc` in the sidecar and then never read it
+    back, so a cached series was returned forever no matter how old it was. That is
+    how two machines came to hold different data under the same filename and score
+    the same strategy 30 points apart (2026-08-01). Provenance you do not act on is
+    not provenance. An entry with no sidecar is treated as stale so the entries
+    written before this check existed heal themselves on first use.
+    """
+    side = e.path.with_suffix(".json")
+    if not side.exists():
+        return True
+    try:
+        meta = json.loads(side.read_text(encoding="utf-8"))
+        fetched = datetime.fromisoformat(meta["fetched_utc"])
+    except Exception:
+        return True
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - fetched).total_seconds()
+    return age >= _INTERVAL_S.get(interval, 86400)
+
+
 def get(
     symbol: str,
     asset_class: str,
@@ -90,7 +119,7 @@ def get(
 ) -> Bars:
     """Return a cached series, downloading it once if it is not there yet."""
     e = _entry(symbol, asset_class, interval)
-    if e.exists and not refresh:
+    if e.exists and not refresh and not _is_stale(e, interval):
         with np.load(e.path) as z:
             return _to_bars(z, symbol)
 
