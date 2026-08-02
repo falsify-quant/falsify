@@ -483,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     import sys
 
     p = argparse.ArgumentParser(
-        prog="falsify-watch",
+        prog="falsify-quant-watch",
         description="Keep running the live monitor and speak only when something changes.",
         epilog=f"example config:\n\n{CONFIG_EXAMPLE}",
         formatter_class=argparse.RawDescriptionHelpFormatter,

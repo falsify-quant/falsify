@@ -297,3 +297,66 @@ def test_the_suite_never_reaches_the_network(live, monkeypatch):
         if j["state"] != "running":
             break
     assert j["state"] == "error"
+
+
+# --------------------------------------------------------------------------------------
+# The form has to offer what the library can actually do, and default to something safe.
+# --------------------------------------------------------------------------------------
+
+from pathlib import Path
+
+from falsify_quant.gui import MARKET_LABELS, MARKET_ORDER, App
+from falsify_quant.spec import PRESETS
+
+
+def test_every_preset_is_reachable_from_the_dropdown():
+    """The hardcoded list drifted once: `futures` existed and could not be selected.
+
+    A market you cannot pick is a market the tool does not have, from the GUI's side.
+    """
+    offered = {m["value"] for m in App(Path(".")).markets()}
+    assert offered == set(PRESETS), f"unreachable presets: {set(PRESETS) - offered}"
+
+
+def test_the_default_market_is_equity():
+    """The first option is what a user who never opens the dropdown gets.
+
+    Deriving the list from PRESETS with sorted() silently made this `crypto-perp`,
+    which would score equities against perp funding and report a confident, wrong
+    verdict. The order is fixed for that reason and is worth pinning.
+    """
+    assert App(Path(".")).markets()[0]["value"] == "equity"
+
+
+def test_market_labels_are_short_enough_for_a_select_box():
+    for m in App(Path(".")).markets():
+        assert len(m["label"]) <= 24, f"{m['label']!r} will be clipped in the dropdown"
+
+
+def test_market_order_only_names_presets_that_exist():
+    """A typo here would silently drop a market to the end instead of erroring."""
+    assert set(MARKET_ORDER) <= set(PRESETS)
+    assert set(MARKET_LABELS) <= set(PRESETS)
+
+
+def test_local_csvs_are_discoverable(tmp_path):
+    (tmp_path / "prices.csv").write_text("date,close\n2020-01-01,100\n", encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "other.csv").write_text("date,close\n2020-01-01,1\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("ignore me", encoding="utf-8")
+
+    found = App(tmp_path).data_files()
+    assert "prices.csv" in found
+    assert "data/other.csv" in found
+    assert not any(f.endswith(".txt") for f in found)
+
+
+def test_the_csv_row_is_hidden_until_there_is_something_to_pick():
+    """An empty control on the common path is clutter."""
+    assert 'id="datarow" hidden' in PAGE
+
+
+def test_the_page_no_longer_hardcodes_market_options():
+    """Regression: options come from the server so they cannot drift again."""
+    assert '<option value="equity-smallcap">' not in PAGE
+    assert '<select id="market"></select>' in PAGE

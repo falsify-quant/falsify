@@ -1,6 +1,6 @@
 """A local app, in your browser, that counts how many times you have asked.
 
-    falsify-gui
+    falsify-quant-gui
 
 Starts a small server on 127.0.0.1 and opens a page. Pick a market, point at a strategy
 file, press Run, read the verdict. No npm, no build step, no CDN -- the page is a string
@@ -64,6 +64,19 @@ DRAIN_CAP = 8 << 20
 # --------------------------------------------------------------------------------------
 # Session state
 # --------------------------------------------------------------------------------------
+
+
+# Short labels for the market dropdown. The full `MarketSpec.name` is a sentence and
+# gets clipped in a select box. MARKET_ORDER decides what a user who never opens the
+# dropdown gets, so equity leads.
+MARKET_ORDER = ["equity", "equity-smallcap", "crypto-spot", "crypto-perp", "futures"]
+MARKET_LABELS = {
+    "equity": "US equity",
+    "equity-smallcap": "US equity, small cap",
+    "crypto-spot": "Crypto spot",
+    "crypto-perp": "Crypto perp",
+    "futures": "Futures",
+}
 
 
 @dataclass
@@ -140,6 +153,41 @@ class App:
 
     # -- discovery ------------------------------------------------------------------
 
+    def markets(self) -> list[dict]:
+        """Offer exactly the presets that exist, equity first.
+
+        These used to be hardcoded `<option>` tags, which silently drifted: `futures`
+        was added to PRESETS and never appeared here, so the GUI could not reach the
+        market the corpus study found a third of the canon was designed for. Deriving
+        the list removes the possibility rather than patching the instance.
+
+        Order is fixed rather than sorted, because the FIRST entry is what a user who
+        never opens the dropdown gets. Sorting alphabetically silently made that
+        `crypto-perp`, which would have scored equities against perp funding costs and
+        reported a confident, wrong verdict.
+
+        Unknown presets still appear, at the end, under their own spec name -- so a
+        preset added later is visible even if nobody updates the labels here.
+        """
+        from falsify_quant.spec import PRESETS   # imported lazily, as _run does
+
+        keys = [k for k in MARKET_ORDER if k in PRESETS]
+        keys += [k for k in sorted(PRESETS) if k not in MARKET_ORDER]
+        return [{"value": k, "label": MARKET_LABELS.get(k, PRESETS[k].name)}
+                for k in keys]
+
+    def data_files(self) -> list[str]:
+        """Local CSVs under the served root, so the GUI is not fetch-only.
+
+        Somebody who prefers clicking to typing is disproportionately likely to have
+        a CSV from their broker and no interest in whether Yahoo has their symbol.
+        """
+        found: list[str] = []
+        for pattern in ("*.csv", "data/*.csv"):
+            for p in sorted(self.root.glob(pattern)):
+                found.append(str(p.relative_to(self.root)).replace("\\", "/"))
+        return found
+
     def strategy_files(self) -> list[str]:
         found: list[str] = []
         for pattern in ("strategies/*.py", "*.py"):
@@ -184,11 +232,28 @@ class App:
             interval = cfg.get("interval", "1h")
             n_bars = int(cfg.get("bars", 5000))
 
-            job.progress.append(f"fetching {symbol}")
-            bars = load(symbol, asset_class=spec.asset_class,
-                        interval=interval, bars=n_bars)
-            if spec.asset_class == "crypto" and interval in GRANULARITY:
-                spec = spec.at_bars_per_year(365.25 * 86400 / GRANULARITY[interval])
+            csv_name = str(cfg.get("csv") or "").strip()
+            if csv_name:
+                # Confined to the served root exactly like the strategy file above --
+                # a dropdown is not a permission, since the request body is whatever
+                # the client chose to send.
+                csv_path = (root / csv_name).resolve()
+                if root not in csv_path.parents or not csv_path.is_file():
+                    raise FileNotFoundError(f"no csv at {csv_name!r} inside {root}")
+                from falsify_quant.cli import _load_csv
+
+                job.progress.append(f"reading {csv_name}")
+                bars = _load_csv(csv_path, None)
+                # A local file carries no promise about bar size, so take the
+                # calendar from the data rather than from the preset.
+                if actual := bars.inferred_bars_per_year:
+                    spec = spec.at_bars_per_year(actual)
+            else:
+                job.progress.append(f"fetching {symbol}")
+                bars = load(symbol, asset_class=spec.asset_class,
+                            interval=interval, bars=n_bars)
+                if spec.asset_class == "crypto" and interval in GRANULARITY:
+                    spec = spec.at_bars_per_year(365.25 * 86400 / GRANULARITY[interval])
 
             job.progress.append(f"{len(bars):,} bars · {spec.name}")
             sw = sweep(mod.strategy, bars, spec, mod.GRID,
@@ -214,7 +279,10 @@ class App:
             reports.mkdir(exist_ok=True)
             out = write_report(verdict, reports / f"gui-{job.id}.html")
 
-            run = Run(id=job.id, label=f"{symbol} · {path.name}", n_trials=n_here,
+            # Name the run after what was actually scored. A CSV run labelled with the
+            # unused Symbol box would misattribute it in the investigation history.
+            source = csv_name or symbol
+            run = Run(id=job.id, label=f"{source} · {path.name}", n_trials=n_here,
                       score=round(float(verdict.score), 1), label_band=verdict.label,
                       report=out.name)
             with self.lock:
@@ -278,7 +346,9 @@ class Handler(BaseHTTPRequestHandler):
         if route.path == "/api/session":
             with self.app.lock:
                 return self._json({"session": self.app.investigation.to_dict(),
-                                   "strategies": self.app.strategy_files()})
+                                   "strategies": self.app.strategy_files(),
+                                   "markets": self.app.markets(),
+                                   "data": self.app.data_files()})
 
         if route.path == "/api/job":
             job = self.app.jobs.get((query.get("id") or [""])[0])
@@ -338,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     import webbrowser
 
     p = argparse.ArgumentParser(
-        prog="falsify-gui",
+        prog="falsify-quant-gui",
         description="Run falsify from a local page in your browser.")
     p.add_argument("--root", type=Path, default=Path.cwd(),
                    help="directory to look for strategy files in (default: cwd)")
@@ -439,12 +509,7 @@ the result.</p>
     <div><label for="symbol">Symbol</label>
       <input id="symbol" value="SPY"></div>
     <div><label for="market">Market</label>
-      <select id="market">
-        <option value="equity">US equity</option>
-        <option value="equity-smallcap">US equity, small cap</option>
-        <option value="crypto-spot">Crypto spot</option>
-        <option value="crypto-perp">Crypto perp</option>
-      </select></div>
+      <select id="market"></select></div>
   </div>
   <div class="row r3">
     <div><label for="bars">Bars of history</label>
@@ -455,6 +520,10 @@ the result.</p>
       </select></div>
     <div><label for="perms">Noise runs</label>
       <input id="perms" type="number" value="100" min="10" step="10"></div>
+  </div>
+  <div class="row r3" id="datarow" hidden>
+    <div><label for="csv">Or score a local CSV instead of fetching</label>
+      <select id="csv"></select></div>
   </div>
   <button id="go">Run</button>
 </div>
@@ -523,6 +592,24 @@ async function refresh(){
       ? d.strategies.map(s => '<option>' + esc(s) + '</option>').join('')
       : '<option value="">no strategy files found here</option>';
   }
+  // Markets and file names are built with DOM methods rather than markup: the values
+  // are a filesystem listing, and `new Option` cannot be talked into being a tag.
+  const fill = (el, items) => {
+    for (const it of items) {
+      el.add(typeof it === 'string' ? new Option(it, it) : new Option(it.label, it.value));
+    }
+  };
+  const mk = $('market');
+  if (!mk.options.length && d.markets) fill(mk, d.markets);
+
+  // The CSV row only appears when there is something to pick, so the common
+  // fetch-a-symbol path is not cluttered by a control that would sit empty.
+  const cs = $('csv');
+  if (!cs.options.length && d.data && d.data.length) {
+    cs.add(new Option('fetch by symbol', ''));
+    fill(cs, d.data);
+    $('datarow').hidden = false;
+  }
   drawCounter();
 }
 
@@ -535,6 +622,7 @@ $('go').onclick = async () => {
     strategy: $('strategy').value, symbol: $('symbol').value,
     market: $('market').value, interval: $('interval').value,
     bars: +$('bars').value, permutations: +$('perms').value,
+    csv: $('csv').value,
   };
   const {job} = await (await fetch('/api/run',
     {method:'POST', body: JSON.stringify(body)})).json();
