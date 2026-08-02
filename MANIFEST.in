@@ -1,3 +1,7 @@
+# The changelog ships with the source: someone reading an unpacked sdist to work
+# out whether to upgrade should not have to go to GitHub for it.
+include CHANGELOG.md
+
 # The sdist ships the tests that exercise the *package*, and nothing that would arrive
 # unable to run.
 #
