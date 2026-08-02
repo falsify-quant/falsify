@@ -159,3 +159,62 @@ def test_from_positions_accepts_a_series_like_object():
             return a
 
     assert list(from_positions(SeriesLike([0, 1, 0]))) == [0.0, 1.0, 0.0]
+
+
+# --------------------------------------------------------------------------------------
+# pandas
+#
+# The porting section sells this path explicitly -- "that's vectorbt's
+# from_signals(entries, exits)", "a pandas column", "pd.Series(bars.close) included" --
+# and it is the shape most people arriving with an existing backtest actually have.
+# It had no test. falsify does not depend on pandas at runtime and should not; it is in
+# the dev extra so the promise is checked rather than assumed.
+# --------------------------------------------------------------------------------------
+
+
+def test_from_signals_takes_the_boolean_series_vectorbt_hands_you():
+    pd = pytest.importorskip("pandas")
+
+    close = pd.Series([10.0, 11, 12, 11, 10, 9, 10, 11])
+    entries, exits = close > close.shift(1), close < close.shift(1)
+
+    w = from_signals(entries=entries, exits=exits, warmup=1)
+    assert isinstance(w, np.ndarray)
+    assert np.isnan(w[0])
+    assert w[1] == 1.0 and w[4] == 0.0
+
+
+def test_from_positions_takes_a_pandas_column():
+    pd = pytest.importorskip("pandas")
+
+    w = from_positions(pd.Series([0, 0, 1, 1, 0, 1]), warmup=2)
+    assert np.array_equal(w[2:], [1.0, 1.0, 0.0, 1.0])
+    assert np.isnan(w[:2]).all()
+
+
+def test_the_index_is_ignored_because_bars_do_not_have_one():
+    """Positional, not aligned -- and it has to be, since `bars` carries no index.
+
+    A DatetimeIndex is what every real pandas user has, and a filtered frame can
+    carry one that is neither sorted nor unique. Any of them must give the same
+    answer as the plain array, or a port would silently trade a shuffled signal.
+    """
+    pd = pytest.importorskip("pandas")
+
+    values = [False, True, True, False, False, True]
+    plain = from_signals(entries=np.array(values), exits=~np.array(values))
+
+    for index in (pd.date_range("2020-01-01", periods=6, freq="D"),
+                  [5, 4, 3, 2, 1, 0],
+                  [1, 1, 2, 2, 3, 3]):
+        s = pd.Series(values, index=index)
+        got = from_signals(entries=s, exits=~s)
+        assert np.array_equal(got, plain, equal_nan=True), f"index {list(index)[:3]} changed it"
+
+
+def test_a_series_wrapping_bars_close_round_trips():
+    """The README tells pandas users to do exactly this."""
+    pd = pytest.importorskip("pandas")
+
+    close = np.array([10.0, 11, 12, 11, 10, 9])
+    assert np.array_equal(pd.Series(close).to_numpy(), close)

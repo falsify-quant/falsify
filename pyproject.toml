@@ -41,7 +41,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# pandas is a test dependency only, and deliberately not a runtime one. The porting
+# docs promise that a pandas Series works wherever an array does, which is the shape
+# most people arriving with an existing backtest have; the tests skip without it, so
+# it is here to make sure CI actually checks the promise instead of skipping past it.
+dev = ["pytest>=8", "pandas>=2"]
 
 [project.urls]
 Homepage = "https://github.com/falsify-quant/falsify"
