@@ -277,7 +277,49 @@ def test_a_bad_strategy_surfaces_in_the_page_not_the_console(live):
         if j["state"] != "running":
             break
     assert j["state"] == "error"
-    assert "ModuleNotFoundError" in j["error"]
+    assert "a_module_that_is_not_installed" in j["error"]
+    assert "pip install" in j["error"], "name the fix, not just the failure"
+
+
+# --------------------------------------------------------------------------------------
+# Every way the CLI says no has to reach the page
+#
+# The CLI rejects user errors by raising SystemExit, which is a BaseException and slips
+# past `except Exception`. The worker thread died without setting a state and the page
+# span forever on a job that had already failed -- so a strategy file missing its GRID,
+# which is the most likely thing about a ported strategy to be wrong, produced a spinner
+# that never stopped and no message anywhere.
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name,source,expected", [
+    ("nogrid.py", "def strategy(bars, fast=5):\n    return None\n", "GRID"),
+    ("nofunc.py", "GRID = {'fast': [5]}\n", "strategy"),
+    ("syntax.py", "GRID = {'fast': [5]}\ndef strategy(bars, fast=5)\n    pass\n", "parsed"),
+    # A directory never reaches _load_module here -- the served-root check refuses it
+    # first, with its own wording. Included because the job still has to resolve.
+    ("adir", None, "no strategy file"),
+])
+def test_a_rejected_strategy_reaches_the_page_instead_of_spinning(
+        live, name, source, expected):
+    base, tmp = live
+    target = tmp / "strategies" / name
+    if source is None:
+        target.mkdir()
+    else:
+        target.write_text(source, encoding="utf-8")
+
+    job = _post(base + "/api/run",
+                {"strategy": f"strategies/{name}", "symbol": "SPY",
+                 "market": "equity", "bars": 300})["job"]
+    for _ in range(400):
+        j = json.loads(_get(base + f"/api/job?id={job}")[1])
+        if j["state"] != "running":
+            break
+
+    assert j["state"] == "error", "the job never resolved; the page would spin forever"
+    assert expected in j["error"]
+    assert "SystemExit" not in j["error"], "the class name means nothing to a person"
 
 
 def test_the_suite_never_reaches_the_network(live, monkeypatch):

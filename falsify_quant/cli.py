@@ -39,6 +39,7 @@ import argparse
 import csv
 import importlib.util
 import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,12 +70,48 @@ def _utf8_console() -> None:
 
 
 def _load_module(path: Path):
+    """Import the user's strategy file, and treat every way that fails as a user error.
+
+    Mistyping the filename is the most common thing anyone does wrong here, and it used
+    to produce eight frames of importlib internals ending in `FileNotFoundError`. That
+    is the first thing a new user sees, it looks like the tool is broken rather than the
+    command, and the GUI -- which confines paths to its served root -- had a clean
+    message for exactly this case while the CLI did not.
+    """
+    if path.is_dir():
+        raise SystemExit(
+            f"{path} is a directory, not a strategy file.\n"
+            "Point at the .py file itself."
+        )
+    if not path.exists():
+        near = sorted(p.name for p in path.parent.glob("*.py")) if path.parent.is_dir() else []
+        near = [n for n in near if not n.startswith("__")][:8]
+        found = f"\nPython files in {path.parent}: {', '.join(near)}" if near else ""
+        raise SystemExit(
+            f"no strategy file at {path}{found}\n\n"
+            f"To start from one that works:  falsify-quant --new {path.name}"
+        )
+
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot import {path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[path.stem] = mod
-    spec.loader.exec_module(mod)
+
+    try:
+        spec.loader.exec_module(mod)
+    except SyntaxError as exc:
+        # Python's own message names the file, the line and the character, which is
+        # everything needed. The frames above it are all importlib and all noise.
+        detail = "".join(traceback.format_exception_only(type(exc), exc)).rstrip()
+        raise SystemExit(f"{path.name} could not be parsed.\n\n{detail}") from None
+    except ModuleNotFoundError as exc:
+        # Ported strategies routinely import pandas, which this does not depend on.
+        raise SystemExit(
+            f"{path.name} imports {exc.name!r}, which is not installed.\n"
+            f"Install it into the same environment as falsify:  "
+            f"pip install {exc.name}"
+        ) from None
 
     if not hasattr(mod, "strategy"):
         raise SystemExit(

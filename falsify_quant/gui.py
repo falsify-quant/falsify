@@ -290,8 +290,18 @@ class App:
                 job.verdict = _verdict_json(verdict, n_here, len(prior))
                 job.report = out.name
                 job.state = "done"
-        except Exception as exc:  # noqa: BLE001 -- surfaced in the page, not the console
-            job.error = f"{type(exc).__name__}: {exc}"
+        # SystemExit is deliberate here, and it is not paranoia. Everything the CLI
+        # rejects as a user error -- no GRID, no strategy function, an unparseable
+        # file -- it rejects by raising SystemExit, which is a BaseException and so
+        # slips straight past `except Exception`. The worker thread then died without
+        # ever setting a state, and the page span forever on a job that had already
+        # failed. A spinner that never stops is the worst way to report a missing GRID.
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 -- surfaced in the page
+            # A SystemExit message is written to be read by a person and says nothing
+            # useful about its own type; anything else is a bug here and the class name
+            # is the most useful part of it.
+            job.error = str(exc) if isinstance(exc, SystemExit) else \
+                f"{type(exc).__name__}: {exc}"
             job.state = "error"
             traceback.print_exc()
 

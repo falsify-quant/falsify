@@ -202,3 +202,96 @@ def test_weekday_only_daily_data_infers_a_trading_calendar(tmp_path):
     bars = _load_csv(p, None)
     assert bars.ts is not None
     assert 240 < bars.inferred_bars_per_year < 280
+
+
+# --------------------------------------------------------------------------------------
+# Importing the strategy file
+#
+# Mistyping the filename is the most common thing anyone does wrong, and it produced
+# eight frames of importlib internals ending in FileNotFoundError -- which reads as the
+# tool being broken rather than the command. Every one of these is a user error, so
+# every one of them gets a sentence instead of a traceback.
+# --------------------------------------------------------------------------------------
+
+
+def _load(path):
+    from falsify_quant.cli import _load_module
+
+    return _load_module(path)
+
+
+def test_a_missing_strategy_file_is_not_a_traceback(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        _load(tmp_path / "typo.py")
+
+    msg = str(exc.value)
+    assert "no strategy file at" in msg
+    assert "Traceback" not in msg and "importlib" not in msg
+
+
+def test_a_missing_file_lists_what_is_actually_there(tmp_path):
+    """Nine times out of ten the file they meant is sitting next to the one they typed."""
+    (tmp_path / "momentum.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "carry.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "__init__.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        _load(tmp_path / "momentumm.py")
+
+    msg = str(exc.value)
+    assert "momentum.py" in msg and "carry.py" in msg
+    assert "__init__" not in msg, "dunder files are noise, not candidates"
+    assert "--new momentumm.py" in msg
+
+
+def test_a_missing_file_in_a_missing_directory_still_explains_itself(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        _load(tmp_path / "nowhere" / "s.py")
+
+    assert "no strategy file at" in str(exc.value)
+
+
+def test_a_directory_is_named_as_one(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        _load(tmp_path)
+
+    assert "directory" in str(exc.value)
+
+
+def test_a_syntax_error_keeps_pythons_message_and_drops_the_frames(tmp_path):
+    """Python names the file, the line and the character. That part is worth keeping."""
+    p = tmp_path / "bad.py"
+    p.write_text("GRID = {'fast': [5]}\ndef strategy(bars, fast=5)\n    pass\n",
+                 encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        _load(p)
+
+    msg = str(exc.value)
+    assert "could not be parsed" in msg
+    assert "SyntaxError" in msg and "line 2" in msg
+    assert "importlib" not in msg and "_bootstrap" not in msg
+
+
+def test_a_missing_import_names_the_package_and_the_fix(tmp_path):
+    """Ported strategies routinely import pandas, which this does not depend on."""
+    p = tmp_path / "needs.py"
+    p.write_text("import definitely_not_installed_xyz\nGRID = {'fast': [5]}\n"
+                 "def strategy(bars, fast=5):\n    return None\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        _load(p)
+
+    msg = str(exc.value)
+    assert "definitely_not_installed_xyz" in msg
+    assert "pip install definitely_not_installed_xyz" in msg
+
+
+def test_a_working_file_still_imports(tmp_path):
+    """The guards must not have made the ordinary case harder to reach."""
+    p = tmp_path / "ok.py"
+    p.write_text("GRID = {'fast': [5]}\ndef strategy(bars, fast=5):\n    return None\n",
+                 encoding="utf-8")
+
+    mod = _load(p)
+    assert callable(mod.strategy) and mod.GRID == {"fast": [5]}
