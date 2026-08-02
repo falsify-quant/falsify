@@ -298,6 +298,36 @@ class WatchConfig:
     mute_s: float = 3600.0
 
 
+def _deliver(sink: Sink, events: list[Event]) -> None:
+    """Hand a batch to one sink, and let that sink fail alone.
+
+    The sinks are a list because the useful configuration is more than one: a local
+    file to grep after the fact, and a webhook that reaches a person. Calling them in
+    a bare loop couples them, and couples them the wrong way round -- a full disk
+    under the file sink raised OSError before the webhook was ever called, so the
+    local convenience took out the delivery that matters. It also skipped the state
+    save below it and, `run_once` being unguarded in `run_forever`, ended the daemon.
+    One log volume filling up should not be able to stop the watching.
+
+    Dropped rather than retried, on purpose, and the reasoning is `webhook_sink`'s:
+    a watchdog that manages a delivery queue is spending its time on something other
+    than watching. The heartbeat is the backstop -- notifications that stop arriving
+    show up as a missing heartbeat, which is the one signal that does not depend on
+    any of this working.
+    """
+    import sys
+
+    try:
+        sink(events)
+    except Exception as exc:  # noqa: BLE001 -- a sink cannot be trusted with the loop
+        try:
+            print(f"sink {getattr(sink, '__name__', sink)!s} failed "
+                  f"({type(exc).__name__}: {exc}); {len(events)} event(s) dropped",
+                  file=sys.stderr, flush=True)
+        except Exception:  # noqa: BLE001 -- reporting the failure must not become one
+            pass
+
+
 def run_once(
     poll: Callable[[], MonitorVerdict],
     store: StateStore,
@@ -347,7 +377,7 @@ def run_once(
 
     if events:
         for sink in sinks:
-            sink(events)
+            _deliver(sink, events)
     store.save(state, last_beat)
     return events
 
@@ -416,6 +446,18 @@ def _as_epoch(value) -> float | None:
     return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
 
 
+def _required(spec: dict, key: str, kind: str) -> str:
+    """A missing key here is a deploy-time typo, so it should read like one.
+
+    The bare KeyError this replaces said `'url'` and nothing else, which is a poor
+    thing to be handed by the tool whose job is telling you when something is wrong.
+    """
+    value = spec.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{kind} sink needs a {key!r}; got {spec!r}")
+    return value.strip()
+
+
 def build_sinks(specs: list[dict], log=print) -> list[Sink]:
     out: list[Sink] = []
     for s in specs or [{"kind": "log"}]:
@@ -423,10 +465,19 @@ def build_sinks(specs: list[dict], log=print) -> list[Sink]:
         if kind == "log":
             out.append(log_sink())
         elif kind == "file":
-            out.append(file_sink(s["path"]))
+            out.append(file_sink(_required(s, "path", "file")))
         elif kind == "webhook":
-            out.append(webhook_sink(s["url"], timeout=float(s.get("timeout", 10.0)),
-                                    log=log))
+            url = _required(s, "url", "webhook")
+            # Checked here rather than at delivery, because the failure mode is silent.
+            # urllib raises ValueError on a scheme-less URL from inside the sink, where
+            # it becomes one dropped batch per cycle -- an alert channel that has never
+            # worked and says so only in a log nobody is reading, which is worse than
+            # having configured no webhook at all.
+            if not url.lower().startswith(("http://", "https://")):
+                raise ValueError(
+                    f"webhook url must start with http:// or https://, got {url!r}. "
+                    "Without a scheme nothing is ever delivered.")
+            out.append(webhook_sink(url, timeout=float(s.get("timeout", 10.0)), log=log))
         else:
             raise ValueError(f"unknown sink {kind!r}; have log, file, webhook")
     return out
@@ -521,6 +572,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         poll = build_poll(cfg)
         sinks = build_sinks(cfg.get("sinks", []))
+    except ValueError as exc:  # raised deliberately, with the explanation already in it
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # noqa: BLE001 -- a bad config should explain itself
         print(f"config error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2

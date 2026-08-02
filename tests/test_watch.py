@@ -418,6 +418,124 @@ def test_build_sinks_rejects_an_unknown_kind():
         build_sinks([{"kind": "carrier-pigeon"}])
 
 
+@pytest.mark.parametrize("url", [
+    "hooks.slack.com/services/XXX",   # the pasted-without-scheme case
+    "//hooks.slack.com/x",
+    "www.example.com/hook",
+])
+def test_a_webhook_url_without_a_scheme_is_refused_at_config_time(url):
+    """urllib raises on this from inside the sink, where it is one drop per cycle.
+
+    An alert channel that has never worked, and says so only in a log nobody reads,
+    is worse than no webhook at all -- the operator believes they are covered. This
+    is the one config mistake whose punishment is silence, so it fails the deploy.
+    """
+    from falsify_quant.watch import build_sinks
+
+    with pytest.raises(ValueError, match="http"):
+        build_sinks([{"kind": "webhook", "url": url}])
+
+
+def test_ordinary_webhook_urls_still_build():
+    from falsify_quant.watch import build_sinks
+
+    assert len(build_sinks([{"kind": "webhook", "url": "https://example.invalid/h"},
+                            {"kind": "webhook", "url": "http://127.0.0.1:9000/h"}])) == 2
+
+
+@pytest.mark.parametrize("spec,missing", [
+    ({"kind": "webhook"}, "url"),
+    ({"kind": "webhook", "url": "   "}, "url"),
+    ({"kind": "file"}, "path"),
+    ({"kind": "file", "path": ""}, "path"),
+])
+def test_a_sink_missing_its_target_says_which_one(spec, missing):
+    """The bare KeyError this replaces said `'url'` and nothing else."""
+    from falsify_quant.watch import build_sinks
+
+    with pytest.raises(ValueError, match=missing):
+        build_sinks([spec])
+
+
+# --------------------------------------------------------------------------------------
+# One sink must not be able to take down the watching
+#
+# The useful configuration is more than one sink: a local file to grep, and a webhook
+# that reaches a person. A bare `for sink in sinks: sink(events)` couples them, and the
+# wrong way round -- the local convenience is the one most likely to fail, and it was
+# taking the delivery that matters with it.
+# --------------------------------------------------------------------------------------
+
+
+def _explodes(events):
+    raise OSError("log volume is full")
+
+
+def test_a_failing_sink_does_not_end_the_cycle(tmp_path):
+    run_once(lambda: _verdict(_alerts(x="alarm")), StateStore(tmp_path / "s.json"),
+             [_explodes], WatchConfig(), now=1.7e9)      # must not raise
+
+
+def test_a_failing_sink_does_not_starve_the_others(tmp_path):
+    got: list = []
+    run_once(lambda: _verdict(_alerts(x="alarm")), StateStore(tmp_path / "s.json"),
+             [_explodes, got.append], WatchConfig(), now=1.7e9)
+
+    assert len(got) == 1, "the webhook that reaches a human never fired"
+    assert {e.kind for e in got[0]} == {"raised", "heartbeat"}
+
+
+def test_a_failing_sink_does_not_lose_the_state(tmp_path):
+    """Skipping the save means every alert is announced again on the next cycle."""
+    store = StateStore(tmp_path / "s.json")
+    run_once(lambda: _verdict(_alerts(x="alarm")), store, [_explodes], WatchConfig(),
+             now=1.7e9)
+
+    assert store.path.exists()
+    assert set(store.load()) == {"x"}
+
+    got: list = []
+    run_once(lambda: _verdict(_alerts(x="alarm")), store, [got.append], WatchConfig(),
+             now=1.7e9 + 60)
+    assert got == [], "an unchanged alarm was announced twice"
+
+
+def test_the_failure_is_reported_rather_than_swallowed(tmp_path, capsys):
+    run_once(lambda: _verdict(_alerts(x="alarm")), StateStore(tmp_path / "s.json"),
+             [_explodes], WatchConfig(), now=1.7e9)
+
+    err = capsys.readouterr().err
+    assert "log volume is full" in err and "dropped" in err
+
+
+def test_a_sink_that_fails_while_reporting_a_failure_is_still_survivable(tmp_path):
+    """Belt and braces: the report path is itself inside a try for a reason."""
+    class Hostile:
+        def __call__(self, events):
+            raise OSError("boom")
+
+        def __str__(self):
+            raise RuntimeError("even my repr is broken")
+
+    run_once(lambda: _verdict(_alerts(x="alarm")), StateStore(tmp_path / "s.json"),
+             [Hostile()], WatchConfig(), now=1.7e9)      # must not raise
+
+
+def test_run_forever_survives_a_sink_that_always_fails(tmp_path):
+    """The whole point. A daemon that exits on a full disk stopped watching."""
+    cycles = []
+
+    def poll():
+        cycles.append(1)
+        return _verdict(_alerts(x="alarm"))
+
+    run_forever(poll, StateStore(tmp_path / "s.json"), [_explodes],
+                WatchConfig(poll_s=0.0),
+                stop=lambda: len(cycles) >= 3, sleep=lambda _: None)
+
+    assert len(cycles) == 3
+
+
 def test_check_mode_validates_without_polling(tmp_path, capsys):
     """`--check` is what you run after editing a config on a box you cannot watch."""
     from falsify_quant.watch import main
