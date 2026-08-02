@@ -24,6 +24,7 @@ from falsify_quant.attest import (
     canonical_bytes,
     content_hash,
     fingerprint_array,
+    fingerprint_bytes,
     fingerprint_text,
     read_attestation,
     verify,
@@ -170,6 +171,28 @@ def test_deleting_the_failing_check_is_caught_by_coverage():
     assert not r.ok
     assert "coverage" in {c.name for c in r.failures}
     assert "score arithmetic" not in {c.name for c in r.failures}  # internally consistent
+
+
+def test_un_breaking_a_broken_verdict_is_caught():
+    """Deleting the lookahead finding is one forgery; passing it is the other.
+
+    Coverage catches the deletion, so the forger's next move is to leave the gate in
+    place and mark it clean. That is the single most valuable edit in the document --
+    it turns a 0.00 BROKEN into a respectable number -- and it is caught only because
+    the headline is recomputed from the parts rather than read off the top.
+    """
+    broken = attest(_verdict({"causality": 0.0, "costs": 0.9, "deflation": 0.9,
+                              "pbo": 0.9, "permutation": 0.9, "regime": 0.9}))
+    assert broken.score == 0.0 and broken.body["verdict"]["broken"] is True
+
+    def pass_the_gate(b):
+        for f in b["findings"]:
+            if f["name"] == "causality":
+                f["score"], f["fatal"] = 1.0, False
+
+    r = verify(_tamper(broken, pass_the_gate, rehash=True))
+    assert not r.ok
+    assert "score arithmetic" in {c.name for c in r.failures}
 
 
 def test_deleting_the_causality_gate_is_called_out_separately():
@@ -341,6 +364,124 @@ def test_the_document_is_human_readable(tmp_path):
     for token in ["falsify_attestation", "content_hash", "SPY", "causality", "score"]:
         assert token in text
     assert text.endswith("\n")
+
+
+# --------------------------------------------------------------------------------------
+# Encoding
+#
+# These exist because a real attestation of a real strategy carried three non-ASCII
+# bytes -- one em-dash in a finding headline -- and that was enough for
+# `json.load(open(path))` on a Windows box to read a different body and report the
+# document TAMPERED. Calling someone a forger because their platform defaulted to
+# cp1252 is the worst thing this module can do, so the file is now pure ASCII and
+# these pin it there.
+# --------------------------------------------------------------------------------------
+
+
+def _non_ascii_verdict():
+    """A verdict whose headlines carry the characters the report actually emits."""
+    findings = [
+        Finding(name=n, title=n.title(), score=s,
+                headline=f"{n} — Sharpe 0.71 ± 0.09, cost drag ≈3 bps",
+                fatal=(n == "causality"), detail={"stat": s})
+        for n, s in {"causality": 1.0, "costs": 0.8, "deflation": 0.7,
+                     "pbo": 0.6, "permutation": 0.5, "regime": 0.9}.items()
+    ]
+    return score_findings(findings, meta={
+        "symbol": "SPY", "market": "US equity", "asset_class": "equity",
+        "bars": 5000, "bars_per_year": 252.0, "years": 19.8,
+        "params": {"fast": 50, "slow": 200}, "n_trials": 4, "sharpe_annual": 0.71,
+    })
+
+
+def test_the_written_file_is_pure_ascii(tmp_path):
+    """Every encoding anyone might open this with has to agree on its bytes."""
+    p = write_attestation(attest(_non_ascii_verdict()), tmp_path / "a.json")
+    raw = p.read_bytes()
+    assert not [b for b in raw if b > 127], "non-ASCII bytes make the hash reader-dependent"
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "cp1252", "latin-1", "ascii"])
+def test_it_verifies_whatever_encoding_the_reader_guesses(tmp_path, encoding):
+    """A third party's `open()` default is not something this library gets to choose."""
+    p = write_attestation(attest(_non_ascii_verdict()), tmp_path / "a.json")
+    raw = json.loads(p.read_text(encoding=encoding))
+    assert verify(Attestation(body=raw["body"],
+                              content_hash=raw["content_hash"])).ok
+
+
+def test_escaping_does_not_change_the_hash(tmp_path):
+    """Serialisation is not canonicalisation -- the hash is over parsed values.
+
+    If these ever diverged, every document written before the escaping change would
+    stop verifying, which is a far more expensive failure than the one it fixed.
+    """
+    att = attest(_non_ascii_verdict())
+    p = write_attestation(att, tmp_path / "a.json")
+    assert read_attestation(p).content_hash == att.content_hash
+    assert content_hash(json.loads(p.read_text("utf-8"))["body"]) == att.content_hash
+
+
+def test_the_characters_are_preserved_not_stripped(tmp_path):
+    """Escaping keeps the text. Dropping it would silently rewrite the evidence."""
+    p = write_attestation(attest(_non_ascii_verdict()), tmp_path / "a.json")
+    headline = json.loads(p.read_text("utf-8"))["body"]["findings"][0]["headline"]
+    assert "—" in headline and "±" in headline and "≈" in headline
+
+
+# --------------------------------------------------------------------------------------
+# The strategy file's own encoding
+#
+# CPython imports a module whose comments are cp1252 without complaint, so the file
+# runs, the whole analysis runs, and only then did attesting it fail. Failing at the
+# end of a long job, on the flagship feature, over a quotation mark in a comment.
+# --------------------------------------------------------------------------------------
+
+
+_SMART_QUOTES = b"# a \x93smart quote\x94 comment \x97 from Notepad\n"
+
+
+def test_a_strategy_that_is_not_utf8_can_still_be_attested(tmp_path):
+    p = tmp_path / "s.py"
+    p.write_bytes(b"def strategy(bars):\n    return None\n" + _SMART_QUOTES)
+
+    att = attest(_verdict(), strategy_source=p)
+    assert att.body["evidence"]["strategy_fingerprint"] == fingerprint_bytes(p.read_bytes())
+    assert verify(att).ok
+
+
+def test_the_byte_fingerprint_matches_the_text_one_for_utf8():
+    """Backwards compatibility: documents written before this change must still match.
+
+    If these two ever diverged, every previously attested strategy would look like a
+    different strategy -- a far more expensive failure than the crash it replaced.
+    """
+    for text in ["def strategy(bars):\n    return None\n",
+                 "# em dash — and pi π\nx = 1\n",
+                 "", "a\r\nb\r\n", "a\rb\r"]:
+        assert fingerprint_bytes(text.encode("utf-8")) == fingerprint_text(text)
+
+
+def test_line_endings_are_normalised_at_the_byte_level_too():
+    """The cross-machine guarantee has to survive reading the file as bytes."""
+    assert fingerprint_bytes(b"a\r\nb\r\n") == fingerprint_bytes(b"a\nb\n")
+    assert fingerprint_bytes(b"a\rb\r") == fingerprint_bytes(b"a\nb\n")
+    assert fingerprint_bytes(b"a\nb\n") != fingerprint_bytes(b"a\nb\nc\n")
+
+
+def test_reading_the_file_is_what_is_fingerprinted_not_its_name(tmp_path):
+    """`--strategy` arrives as a Path; fingerprinting the path would attest nothing."""
+    a, b = tmp_path / "one.py", tmp_path / "two.py"
+    body = b"def strategy(bars):\n    return None\n"
+    a.write_bytes(body)
+    b.write_bytes(body)
+
+    fp = lambda p: attest(_verdict(), strategy_source=p).body["evidence"][
+        "strategy_fingerprint"]
+    assert fp(a) == fp(b), "same code under two names must fingerprint the same"
+
+    b.write_bytes(body + b"# changed\n")
+    assert fp(a) != fp(b), "different code must not fingerprint the same"
 
 
 def test_a_broken_verdict_still_attests():

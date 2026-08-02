@@ -68,6 +68,7 @@ __all__ = [
     "content_hash",
     "fingerprint_array",
     "fingerprint_text",
+    "fingerprint_bytes",
     "write_attestation",
     "read_attestation",
     "ANCHOR_HELP",
@@ -154,6 +155,25 @@ def fingerprint_array(x) -> str:
     return hashlib.sha256(a.tobytes()).hexdigest()[:32]
 
 
+def fingerprint_bytes(raw: bytes) -> str:
+    """A 32-hex identity for source code as it sits on disk, in whatever encoding.
+
+    Agrees with `fingerprint_text` on anything that is valid UTF-8: decoding and
+    re-encoding UTF-8 is the identity, and `\\r` and `\\n` cannot occur inside a
+    multi-byte sequence, so normalising before or after the encode is the same
+    operation. Fingerprints written by earlier versions still match.
+
+    The difference is that this one cannot fail. CPython will happily import a
+    strategy whose comments are cp1252 -- which is what a Windows editor produces
+    the moment somebody types a quotation mark -- so the file runs, the analysis
+    runs, and the old code then raised `UnicodeDecodeError` at the very end, after
+    all the work, because of a character in a comment. Refusing to attest a
+    perfectly good run over the encoding of a comment is not a defensible failure.
+    """
+    normalised = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(normalised).hexdigest()[:32]
+
+
 def fingerprint_text(text: str) -> str:
     """A 32-hex identity for source code, normalised for line endings.
 
@@ -161,8 +181,7 @@ def fingerprint_text(text: str) -> str:
     whether it last touched Windows, which would make the check useless exactly when
     somebody is trying to confirm a match across machines.
     """
-    normalised = text.replace("\r\n", "\n").replace("\r", "\n")
-    return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:32]
+    return fingerprint_bytes(text.encode("utf-8"))
 
 
 # --------------------------------------------------------------------------------------
@@ -192,11 +211,30 @@ class Attestation:
         return self.body.get("anchor")
 
     def to_json(self, indent: int = 2) -> str:
+        """Serialise the document for handing to someone else.
+
+        `ensure_ascii=True` here, deliberately, and it is NOT the same decision as
+        in `canonical_bytes`. The hash is taken over parsed values, so escaping
+        non-ASCII on the way out cannot change it -- `\\u2014` reads back as the
+        same character and canonicalises identically.
+
+        What it buys is that the file is pure ASCII, so every encoding anyone is
+        likely to open it with agrees on its bytes. A single em-dash in a finding
+        headline was enough to make `json.load(open(path))` produce a different
+        body on Windows, where the default is cp1252 rather than UTF-8 -- and a
+        different body hashes differently, so the document reported TAMPERED.
+        Accusing somebody of forgery because their platform picked a codepage is
+        the worst failure this file has available to it.
+
+        Same reasoning the NaN handling in `_plain` already applies: a document
+        whose purpose is being checked by other people's tooling should not depend
+        on that tooling being configured correctly.
+        """
         return json.dumps(
             {"falsify_attestation": SCHEMA_VERSION,
              "content_hash": self.content_hash,
              "body": _plain(self.body)},
-            indent=indent, ensure_ascii=False, allow_nan=False,
+            indent=indent, ensure_ascii=True, allow_nan=False,
         ) + "\n"
 
 
@@ -226,7 +264,9 @@ def attest(
     ts = meta.pop("ts", None)
 
     if isinstance(strategy_source, Path):
-        strategy_source = strategy_source.read_text(encoding="utf-8")
+        # Bytes, not text: see `fingerprint_bytes`. The file already imported, so its
+        # encoding is not this function's business to have an opinion about.
+        strategy_source = strategy_source.read_bytes()
 
     body: dict = {
         "schema": SCHEMA_VERSION,
@@ -252,8 +292,10 @@ def attest(
             "sharpe_annual": meta.get("sharpe_annual"),
             "equity_fingerprint": fingerprint_array(equity) if equity is not None else None,
             "series_fingerprint": fingerprint_array(ts) if ts is not None else None,
-            "strategy_fingerprint": (fingerprint_text(strategy_source)
-                                     if strategy_source else None),
+            "strategy_fingerprint": (
+                (fingerprint_bytes(strategy_source)
+                 if isinstance(strategy_source, bytes) else fingerprint_text(strategy_source))
+                if strategy_source else None),
         },
         "verdict": {
             "score": float(verdict.score),
