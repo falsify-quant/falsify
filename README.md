@@ -31,12 +31,36 @@ Then point it at your own:
 falsify-quant mystrategy.py --symbol SPY --market equity
 ```
 
-We ran it against **890 backtests of eighteen published trading rules**, each at the
-parameters its own source named. The median scored **3.7 out of 100**, and **51% could not
-clear their own trading costs** before overfitting arose at all — but read that alongside
-the *Home turf* section, because scored in the markets their own authors actually tested,
-the same rules median **56.9**. Both numbers are in
-[`corpus/FINDINGS.md`](corpus/FINDINGS.md), and reproducing it is two commands.
+---
+
+## Where this came from
+
+I had a crypto bot trading real money, and an equities bot alongside it. Months of
+walk-forward work, a backtest I believed, and a slow suspicion I could not make precise —
+the thing was not losing, exactly, it just never did what the backtest said it would.
+
+So I stopped tuning it and wrote something to attack it instead. The first honest verdicts
+were these:
+
+| what I had running | what it came back with |
+|---|---|
+| equities bot, five tickers | **0/100 — NO EDGE FOUND, on every one of them** |
+| crypto trend engine | **53/100 — UNPROVEN** |
+| 200-day overlay | **82/100 — SURVIVED** |
+
+Not one of the five equity names cleared its own commission, and two had negative expected
+return *before* costs. I had been paying to run them.
+
+That is the whole reason this exists, and it is also the only credential it has. I did not
+build a tool that agrees with me — I built one that took two live configurations away from
+me, and I changed them. If it had passed everything of mine, you should not install it.
+
+The same tool then ran against **890 backtests of eighteen published trading rules**, each
+at the parameters its own source named. Median **3.7 out of 100**; **51% could not clear
+their own trading costs** before overfitting arose at all. Read that alongside the *Home
+turf* section though — scored in the markets their authors actually tested, the same rules
+median **56.9**. Both numbers are in [`corpus/FINDINGS.md`](corpus/FINDINGS.md), and
+reproducing it is two commands.
 
 ---
 
@@ -142,6 +166,126 @@ of the grid, times the number of times they changed the grid after not liking th
 
 A tool handed a finished equity curve has no way to know that number, so it cannot correct
 for it. falsify runs your grid itself, so it counts honestly.
+
+---
+
+## The strategy file
+
+This is the input format — what a strategy has to look like for falsify to run it. It is
+not advice on finding an edge, and there is none of that anywhere in this project. There
+is no optimiser here and no setting that improves a score, so the only thing this section
+can help you do is get your existing idea *in*.
+
+For the avoidance of doubt about whose side the tool is on, here is what it said about the
+three strategies its author had running on real money: the equities bot scored **0/100 on
+all five names it traded**, the crypto trend engine **53/100 UNPROVEN**, and only the third
+— a 200-day overlay — came back **82/100 SURVIVED**. Two live configurations were changed
+because of it.
+
+That spread is the point. A validator whose author reports that it cleared all his own
+work would not be worth installing.
+
+Don't start from a blank file:
+
+```bash
+falsify-quant --new mystrategy.py
+```
+
+That writes a working moving-average strategy you can score immediately, with the
+contract in a comment at the top. Edit it into your idea.
+
+The contract is small enough to state in full:
+
+```python
+def strategy(bars, fast=20, slow=100):    # any parameters you like, all with defaults
+    c = bars.close                        # numpy array, NOT a DataFrame column
+    ...
+    return w                              # one weight per bar, same length as bars.close
+
+GRID = {"fast": [10, 20, 40], "slow": [50, 100, 200]}
+```
+
+- **`bars` is a `Bars` object, not a DataFrame.** `bars.close`, `bars.open`, `bars.high`,
+  `bars.low`, `bars.volume` are plain numpy arrays. Pandas users: `pd.Series(bars.close)`.
+- **Return one weight per bar.** `1.0` fully long, `0.0` flat, `-1.0` fully short;
+  fractions are fine. Same length as `bars.close`.
+- **Use `np.nan` for the warmup**, not a shorter array. The engine reads NaN as flat.
+- **Use only bars up to and including `i`** when computing weight `i`. This is checked,
+  not trusted — see [Causality](#1-causality--the-only-test-that-finds-bugs-rather-than-weaknesses).
+- **Don't apply execution lag or costs yourself.** The engine does both. Shifting your own
+  signal forward a bar gets you charged the lag twice.
+
+Optionally define `valid(params) -> bool` to skip nonsensical combinations
+(`fast >= slow`). Combinations rejected there are not counted as trials, so they cost
+you nothing in deflation.
+
+**Keep `GRID` small.** Every combination is a lottery ticket the deflation has to charge
+you for. Twelve trials you can justify beats two hundred you cannot — and unlike every
+other backtesting tool, here a bigger search makes your score *worse*, which is the
+intended incentive.
+
+### Porting a strategy you already have
+
+Most people don't have a weight series. They have **entries and exits** — that's
+vectorbt's `from_signals(entries, exits)`, backtrader's `buy()`/`sell()`, Pine's
+`strategy.entry`/`strategy.close`, and how anyone describes an idea out loud. There's a
+helper for exactly that translation:
+
+```python
+from falsify_quant import from_signals
+
+def strategy(bars, fast=20, slow=100):
+    f, s = sma(bars.close, fast), sma(bars.close, slow)
+    return from_signals(entries=f > s, exits=f < s, warmup=slow)
+```
+
+The rule is **last event wins**, which answers the three questions the event model
+leaves open, the way people actually mean them:
+
+- an entry while already long is a no-op, **not a second position** — getting this wrong
+  is how a hand-written port silently trades twice;
+- an exit while already flat is a no-op;
+- before the first event, you are flat.
+
+On a bar with conflicting signals the priority is exits > short entries > long entries.
+It takes `short_entries` / `short_exits` for two-sided strategies, and `size=` to scale.
+The conversion only ever forward-fills, so it is causal by construction — and there is a
+test asserting that, because it's the property falsify would otherwise fail you for.
+
+**If you already have a position series** — a pandas column, a list, a numpy array —
+there is nothing to translate:
+
+```python
+from falsify_quant import from_positions
+
+def strategy(bars, lookback=20):
+    sig = my_existing_backtest(bars.close, lookback)   # returns 0/1 per bar
+    return from_positions(sig, warmup=lookback)
+```
+
+`bars.close` is a numpy array, so anything that reads one works — `pd.Series(bars.close)`
+included.
+
+**What you cannot port is a finished equity curve or a trade log.** Those don't say how
+many parameter combinations you tried to get there, and without that number there is
+nothing to deflate. That is the one constraint this tool cannot relax without becoming
+the thing it was built to check.
+
+### If it won't run
+
+falsify names the actual mistake rather than making you guess. The four most common:
+
+| what you wrote | what you get told |
+|---|---|
+| `bars["close"]` | `'Bars' object is not subscriptable` — use `bars.close`; it's not a DataFrame |
+| a `GRID` key that isn't a parameter | the offending key, next to the parameters your `strategy` does accept |
+| forgot the `return` | `strategy() returned None -- did you forget to return?` |
+| returned a shorter array | `returned 1496 weights for 1500 bars`, and to pad the warmup with NaN |
+
+If only *some* combinations fail, the run continues on the rest and prints a warning
+saying how many were skipped and why. Those cells are excluded from the deflation, so
+the trial count reflects what actually ran — but you are told, because a grid that
+half-ran is not the grid you think you searched.
 
 ---
 
