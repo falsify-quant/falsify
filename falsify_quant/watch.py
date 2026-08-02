@@ -315,17 +315,27 @@ def _deliver(sink: Sink, events: list[Event]) -> None:
     show up as a missing heartbeat, which is the one signal that does not depend on
     any of this working.
     """
-    import sys
-
     try:
         sink(events)
     except Exception as exc:  # noqa: BLE001 -- a sink cannot be trusted with the loop
-        try:
-            print(f"sink {getattr(sink, '__name__', sink)!s} failed "
-                  f"({type(exc).__name__}: {exc}); {len(events)} event(s) dropped",
-                  file=sys.stderr, flush=True)
-        except Exception:  # noqa: BLE001 -- reporting the failure must not become one
-            pass
+        _warn(lambda: f"sink {getattr(sink, '__name__', sink)!s} failed "
+                      f"({type(exc).__name__}: {exc}); {len(events)} event(s) dropped")
+
+
+def _warn(build: Callable[[], str]) -> None:
+    """Say something went wrong, and never become the thing that goes wrong.
+
+    Takes a callable rather than a string because building the message is itself
+    part of what can fail: the subject is an object that has just misbehaved, and
+    interpolating it calls its `__str__`. Formatting outside the guard moves the
+    crash rather than preventing it.
+    """
+    import sys
+
+    try:
+        print(build(), file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- reporting a failure must not become one
+        pass
 
 
 def run_once(
@@ -378,7 +388,20 @@ def run_once(
     if events:
         for sink in sinks:
             _deliver(sink, events)
-    store.save(state, last_beat)
+
+    # Same reasoning as `_deliver`, one volume further out. If the state cannot be
+    # written the daemon carries on without a memory: every standing alert is announced
+    # again next cycle, which is noisy, and the noise is the correct signal -- an
+    # operator seeing the same alarm every five minutes goes and looks. A daemon that
+    # exited here would produce silence instead, and silence is what this whole module
+    # exists to stop being ambiguous.
+    try:
+        store.save(state, last_beat)
+    except Exception as exc:  # noqa: BLE001 -- outliving the disk is the job
+        _warn(lambda: f"could not save watch state to {store.path} "
+                      f"({type(exc).__name__}: {exc}); "
+                      f"alerts will repeat until this is fixed")
+
     return events
 
 

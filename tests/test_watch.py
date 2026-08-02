@@ -521,6 +521,53 @@ def test_a_sink_that_fails_while_reporting_a_failure_is_still_survivable(tmp_pat
              [Hostile()], WatchConfig(), now=1.7e9)      # must not raise
 
 
+class _FullDisk(StateStore):
+    def save(self, state, last_heartbeat):
+        raise OSError("no space left on device")
+
+
+def test_a_state_volume_that_fills_up_does_not_end_the_daemon(tmp_path):
+    """One volume further out than the sinks, and the same argument.
+
+    Carrying on means announcing every standing alert again next cycle. That is
+    noisy, and the noise is the right signal -- an operator seeing the same alarm
+    every five minutes goes and looks. Exiting produces silence, which is the one
+    thing this module exists to stop being ambiguous.
+    """
+    got: list = []
+    cycles: list = []
+
+    def poll():
+        cycles.append(1)
+        return _verdict(_alerts(x="alarm"))
+
+    run_forever(poll, _FullDisk(tmp_path / "s.json"), [got.append],
+                WatchConfig(poll_s=0.0),
+                stop=lambda: len(cycles) >= 3, sleep=lambda _: None)
+
+    assert len(cycles) == 3
+    assert len(got) == 3, "the alarm should be re-announced, not swallowed"
+
+
+def test_a_failed_state_save_says_why_the_alerts_repeat(tmp_path, capsys):
+    run_once(lambda: _verdict(_alerts(x="alarm")), _FullDisk(tmp_path / "s.json"),
+             [], WatchConfig(), now=1.7e9)
+
+    err = capsys.readouterr().err
+    assert "no space left on device" in err
+    assert "repeat" in err
+
+
+def test_the_events_still_go_out_when_the_state_cannot_be_saved(tmp_path):
+    """Delivery comes first on purpose: the alert matters more than the bookkeeping."""
+    got: list = []
+    run_once(lambda: _verdict(_alerts(x="alarm")), _FullDisk(tmp_path / "s.json"),
+             [got.append], WatchConfig(), now=1.7e9)
+
+    assert len(got) == 1
+    assert {e.kind for e in got[0]} == {"raised", "heartbeat"}
+
+
 def test_run_forever_survives_a_sink_that_always_fails(tmp_path):
     """The whole point. A daemon that exits on a full disk stopped watching."""
     cycles = []
