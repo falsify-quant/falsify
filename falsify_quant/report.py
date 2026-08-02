@@ -42,6 +42,39 @@ def _fmt(x: object, digits: int = 3) -> str:
     return html.escape(str(x))
 
 
+def _curve_scale(equity: list[float]) -> str:
+    """Total return and worst drawdown, next to the chart heading.
+
+    Without these the curve is shape with no magnitude: the reader cannot tell
+    +2% from +200%, and both figures existed only inside a collapsed toggle under
+    the *costs* finding, which is not where anyone looks for them. This does not
+    promote return to the headline -- the score stays the headline -- it just
+    makes the chart that is already on the page readable.
+    """
+    if not equity:
+        return ""
+    # equity is (1+net).cumprod(), so it starts from an implied 1.0 BEFORE the
+    # first bar -- the endpoint alone is the compounded return. Dividing by
+    # equity[0] would silently discard the first bar's contribution.
+    #
+    # Said "compounded" rather than "total" on purpose: the detail tables report
+    # `net_return` as a plain SUM of bar returns, and on this sample those differ
+    # by 3.8 points (15.8% summed against 12.0% compounded, the gap being
+    # volatility drag). Two different quantities under one word, in a report
+    # about not overstating results, is exactly the kind of thing this tool
+    # exists to catch elsewhere.
+    total = equity[-1] - 1.0
+
+    peak, worst = equity[0], 0.0
+    for v in equity:
+        peak = max(peak, v)
+        if peak:
+            worst = min(worst, v / peak - 1.0)
+
+    return (f'<span class="scale">{total:+.1%} compounded &middot; '
+            f'{worst:.1%} worst drawdown</span>')
+
+
 def _sparkline(values: list[float], width: int = 720, height: int = 160) -> str:
     """Equity curve as an inline SVG path, downsampled to keep the file small."""
     if not values:
@@ -93,8 +126,8 @@ _DETAIL_LABELS = {
     "breakeven_cost_bps": "Breakeven cost",
     "turnover_per_year": "Turnover per year",
     "n_trades": "Trades",
-    "gross_return": "Gross return",
-    "net_return": "Net return",
+    "gross_return": "Gross return (summed)",
+    "net_return": "Net return (summed)",
     "cost_drag": "Paid in costs",
     "dsr": "Deflated Sharpe (probability real)",
     "n_trials": "Variants searched",
@@ -202,6 +235,12 @@ border-top:1px solid var(--line);font-size:13px}
 .meta dd{margin:0;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 h2{font:600 13px ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.14em;
 text-transform:uppercase;color:var(--dim);margin:56px 0 16px}
+/* Sits on the curve's heading. Deliberately quiet -- the score is the headline,
+   this only stops the chart being a shape with no magnitude. Wraps under the
+   heading on a narrow screen rather than pushing it out of view. */
+.scale{float:right;text-transform:none;letter-spacing:.02em;color:var(--dim);
+font-weight:400}
+@media(max-width:520px){.scale{float:none;display:block;margin-top:6px}}
 .spark{width:100%;height:160px;display:block}
 .sparkline{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .sparkfill{fill:color-mix(in srgb,var(--accent) 8%,transparent);stroke:none}
@@ -265,7 +304,8 @@ def render_report(verdict: Verdict, title: str | None = None) -> str:
 
     equity = m.get("equity") or []
     curve_html = (
-        f'<h2>Net equity curve, after costs</h2>{_sparkline(equity)}' if equity and not verdict.broken else ""
+        f'<h2>Net equity curve, after costs{_curve_scale(equity)}</h2>{_sparkline(equity)}'
+        if equity and not verdict.broken else ""
     )
 
     cards = []
