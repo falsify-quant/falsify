@@ -133,3 +133,72 @@ def test_unparseable_price_column_says_where_to_look(tmp_path):
 def test_close_names_are_all_lowercase():
     """Lookup is done on a lowercased header, so an uppercase entry could never match."""
     assert all(n == n.lower() for n in CLOSE_NAMES)
+
+
+# --------------------------------------------------------------------------------------
+# Dates decide the calendar, and the calendar scales every annualised number.
+# A misparsed date column is worse than no date column: it sets bars_per_year to
+# something confident and wrong, and nothing downstream can notice.
+# --------------------------------------------------------------------------------------
+
+from falsify_quant.cli import _parse_dates
+
+
+def test_iso_dates():
+    ts = _parse_dates(["2020-01-01", "2020-01-02", "2020-01-03"])
+    assert ts is not None and len(ts) == 3
+
+
+def test_us_slash_dates_are_read(tmp_path):
+    """Nasdaq's own export writes MM/DD/YYYY, and was previously unreadable."""
+    ts = _parse_dates(["01/03/2023", "01/04/2023", "01/05/2023"])
+    assert ts is not None
+    assert ts[1] - ts[0] == 86400
+
+
+def test_a_format_that_shuffles_the_order_is_rejected():
+    """03/04 then 03/03 parses under %m/%d but goes backwards, so it is not trusted.
+
+    Accepting it would set the bar spacing from a scrambled series.
+    """
+    assert _parse_dates(["03/04/2024", "03/03/2024"]) is None
+
+
+def test_duplicate_dates_are_rejected():
+    """Repeated timestamps give a nonsense spacing; strictly increasing or nothing."""
+    assert _parse_dates(["2020-01-01", "2020-01-01", "2020-01-02"]) is None
+
+
+def test_unparseable_returns_none_rather_than_a_partial_series():
+    assert _parse_dates(["not a date", "2020-01-02"]) is None
+    assert _parse_dates(["", ""]) is None
+
+
+def test_other_common_export_shapes():
+    for values in (["2020/01/01", "2020/01/02"],
+                   ["01-Jan-2020", "02-Jan-2020"],
+                   ["20200101", "20200102"]):
+        assert _parse_dates(values) is not None, values
+
+
+def test_weekday_only_daily_data_infers_a_trading_calendar(tmp_path):
+    """End to end: the inferred calendar must land near 252, not 365."""
+    import csv as _c
+    import datetime as _dt
+
+    d, rows = _dt.date(2023, 1, 3), []
+    for i in range(300):
+        while d.weekday() >= 5:
+            d += _dt.timedelta(days=1)
+        rows.append([d.strftime("%m/%d/%Y"), f"${100 + i * 0.5:,.2f}"])
+        d += _dt.timedelta(days=1)
+
+    p = tmp_path / "nq.csv"
+    with open(p, "w", newline="", encoding="utf-8") as fh:
+        w = _c.writer(fh)
+        w.writerow(["Date", "Close/Last"])
+        w.writerows(rows)
+
+    bars = _load_csv(p, None)
+    assert bars.ts is not None
+    assert 240 < bars.inferred_bars_per_year < 280

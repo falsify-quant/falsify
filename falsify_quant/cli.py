@@ -190,6 +190,52 @@ def _number(text) -> float:
     return float(s)
 
 
+# Tried in order after ISO. %m/%d/%Y is the Nasdaq/US export shape; %d/%m/%Y is the
+# rest of the world and is genuinely ambiguous against it, which is why the result is
+# only accepted if it comes out strictly increasing. A misparsed date column is worse
+# than none at all -- it silently sets the calendar every annualised number is scaled
+# by -- so the monotonicity check is the point, not a nicety.
+_DATE_FORMATS = ("%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d", "%d-%b-%Y", "%b %d, %Y",
+                 "%m/%d/%Y %H:%M", "%Y%m%d")
+
+
+def _parse_dates(values: list[str]) -> np.ndarray | None:
+    """Timestamps from a date column, or None if no format reads them coherently."""
+    def finish(parsed: list[float]) -> np.ndarray | None:
+        if len(parsed) != len(values):
+            return None
+        arr = np.array(parsed, dtype=np.float64)
+        # Strictly increasing is the guard: an ambiguous format that happens to
+        # parse (03/04 as March 4 vs April 3) will shuffle the order, and a
+        # shuffled series would silently mis-scale the calendar.
+        return arr if len(arr) < 2 or np.all(np.diff(arr) > 0) else None
+
+    iso: list[float] = []
+    for v in values:
+        text = v.strip().replace("Z", "+00:00")
+        try:
+            d = datetime.fromisoformat(text)
+        except ValueError:
+            iso = []
+            break
+        iso.append(d.replace(tzinfo=d.tzinfo or timezone.utc).timestamp())
+    if (out := finish(iso)) is not None:
+        return out
+
+    for fmt in _DATE_FORMATS:
+        parsed: list[float] = []
+        for v in values:
+            try:
+                d = datetime.strptime(v.strip(), fmt)
+            except ValueError:
+                parsed = []
+                break
+            parsed.append(d.replace(tzinfo=timezone.utc).timestamp())
+        if (out := finish(parsed)) is not None:
+            return out
+    return None
+
+
 def _load_csv(path: Path, symbol: str | None) -> Bars:
     """Read a CSV with a close column, and optionally date/open/high/low/volume."""
     with open(path, newline="", encoding="utf-8-sig") as fh:
@@ -223,18 +269,7 @@ def _load_csv(path: Path, symbol: str | None) -> Bars:
             try:
                 ts = np.array([float(r[key]) for r in rows])
             except ValueError:
-                parsed = []
-                for r in rows:
-                    v = str(r[key]).strip().replace("Z", "+00:00")
-                    try:
-                        d = datetime.fromisoformat(v)
-                    except ValueError:
-                        parsed = []
-                        break
-                    if d.tzinfo is None:
-                        d = d.replace(tzinfo=timezone.utc)
-                    parsed.append(d.timestamp())
-                ts = np.array(parsed) if parsed else None
+                ts = _parse_dates([str(r[key]) for r in rows])
             break
 
     try:
@@ -407,6 +442,21 @@ def main(argv: list[str] | None = None) -> int:
     # A local CSV carries no promise about bar size, so take the calendar from the data.
     if args.csv and (actual := bars.inferred_bars_per_year):
         spec = spec.at_bars_per_year(actual)
+    elif args.csv:
+        # No usable date column, so the calendar falls back to the preset's. Every
+        # annualised figure -- Sharpe, the deflation benchmark, turnover per year --
+        # is scaled by it, so silently guessing wrong inflates or deflates the
+        # headline by a constant factor with nothing anywhere looking odd. The
+        # calendar check downstream cannot catch this either: with no timestamps
+        # there is no bar spacing for it to compare against.
+        print(f"\n{YELLOW}{BOLD}warning{RESET}  no readable date column in "
+              f"{args.csv.name}, so annualised figures assume "
+              f"{spec.bars_per_year:,.0f} bars/year from --market {args.market}.\n"
+              f"         If these are not {args.market} bars at that frequency, "
+              f"Sharpe and everything derived from it are wrong by a constant "
+              f"factor.\n"
+              f"         Add a date column, or pick a --market whose calendar "
+              f"matches your bars.", file=sys.stderr)
 
     n = grid_size(mod.GRID)
     print(f"{DIM}{len(bars):,} bars of {bars.symbol} · {spec.name} · "
