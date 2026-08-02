@@ -4,6 +4,10 @@ Nothing to write and nothing to download -- see what a verdict looks like first:
 
     falsify-quant --demo
 
+Don't start from a blank file. This writes a working one you can run immediately:
+
+    falsify-quant --new mystrategy.py
+
 Then on your own strategy:
 
     falsify-quant mystrategy.py --symbol BTC-USD --market crypto-perp
@@ -24,6 +28,9 @@ Your strategy file needs two names at module level:
     GRID = {"fast": [5, 10, 20], "slow": [50, 100, 200]}
 
 and may optionally define `valid(params) -> bool` to skip nonsensical combinations.
+
+`bars` is a Bars object, not a DataFrame: `bars.close` and friends are numpy arrays.
+Return one weight per bar, NaN during the warmup. `--new` writes all of that for you.
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ from pathlib import Path
 import numpy as np
 
 from . import run, write_report
-from .harness import grid_size
+from .harness import StrategyError, grid_size
 from .spec import PRESETS, Bars
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
@@ -84,6 +91,105 @@ def _load_module(path: Path):
     return mod
 
 
+TEMPLATE = '''"""A strategy for falsify to attack. Runs as-is -- edit it into yours.
+
+THE CONTRACT, which is the whole of it:
+
+    strategy(bars, **params) -> one target weight per bar
+
+  * `bars` is a Bars object, NOT a DataFrame. `bars.close`, `bars.open`,
+    `bars.high`, `bars.low`, `bars.volume` are plain numpy arrays.
+  * Return ONE weight PER BAR, same length as `bars.close`. 1.0 = fully long,
+    0.0 = flat, -1.0 = fully short. Fractions are fine.
+  * Use NaN for the warmup. The engine reads NaN as flat. Do not return a
+    shorter array to skip the warmup.
+  * Use only data up to and including bar i when computing weight i. falsify
+    checks this by re-running with future bars withheld, and a mismatch is the
+    one finding that voids the whole report.
+
+Execution lag and costs are NOT your job -- the engine applies both. If you
+shift your own signal forward a bar you will be charged the lag twice.
+"""
+
+import numpy as np
+
+
+def strategy(bars, fast=20, slow=100):
+    """Long while the fast trailing mean is above the slow one, else flat."""
+    c = np.asarray(bars.close, dtype=float)
+    f = _sma(c, int(fast))
+    s = _sma(c, int(slow))
+
+    w = np.where(f > s, 1.0, 0.0)
+    w[np.isnan(f) | np.isnan(s)] = np.nan      # warmup -> flat
+    return w
+
+
+def _sma(x, n):
+    """Trailing mean. NaN until n values exist -- never backfilled."""
+    out = np.full(len(x), np.nan)
+    if n < 1 or n > len(x):
+        return out
+    csum = np.cumsum(np.insert(x, 0, 0.0))
+    out[n - 1:] = (csum[n:] - csum[:-n]) / n
+    return out
+
+
+# Every combination here is a lottery ticket the deflation has to charge you for,
+# so keep this small and justify each value. Four fast x three slow is twelve
+# trials; a hundred is a different and much harder claim to defend.
+GRID = {
+    "fast": [10, 20, 40],
+    "slow": [50, 100, 200],
+}
+
+
+def valid(p):
+    """Optional. Combinations rejected here are not counted as trials."""
+    return p["fast"] < p["slow"]
+'''
+
+
+def _write_template(path: Path) -> int:
+    """`--new`: the blank page is where most people stop, so remove it."""
+    if path.exists():
+        raise SystemExit(f"{path} already exists -- pick another name, or delete it")
+    if path.suffix != ".py":
+        path = path.with_suffix(".py")
+    try:
+        path.write_text(TEMPLATE, encoding="utf-8")
+    except OSError as exc:
+        raise SystemExit(f"could not write {path}: {exc}")
+    print(f"{BOLD}wrote {path}{RESET}\n")
+    print("It is a working moving-average strategy, so you can score it right now:\n")
+    print(f"    {BOLD}falsify-quant {path} --symbol AAPL --market equity{RESET}\n")
+    print(f"{DIM}Then edit strategy() into your own idea. The contract is at the "
+          f"top of the file.{RESET}")
+    return 0
+
+
+# What the places people actually get price data from call the close column.
+# "Close/Last" is Nasdaq's own export, "Adj Close" is Yahoo's, "Settle" is futures
+# continuations. Rejecting a file because of its header is a pointless place to lose
+# somebody who has done everything else right.
+CLOSE_NAMES = ("close", "close/last", "close_last", "closelast", "adj close",
+               "adj_close", "adjclose", "adjusted close", "c", "price", "last",
+               "last price", "px_last", "settle", "settlement")
+
+
+def _number(text) -> float:
+    """Parse a price cell.
+
+    Nasdaq exports prices as `$123.45` and plenty of sources use thousands
+    separators. Both are unambiguous, so refusing them only makes the user
+    reformat a file to prove a point.
+    """
+    s = str(text).strip().replace(",", "").replace("$", "").replace(" ", "")
+    if s.startswith("(") and s.endswith(")"):     # accounting negative
+        s = "-" + s[1:-1]
+    return float(s)
+
+
 def _load_csv(path: Path, symbol: str | None) -> Bars:
     """Read a CSV with a close column, and optionally date/open/high/low/volume."""
     with open(path, newline="", encoding="utf-8-sig") as fh:
@@ -92,16 +198,21 @@ def _load_csv(path: Path, symbol: str | None) -> Bars:
         raise SystemExit(f"{path} is empty")
 
     cols = {k.lower().strip(): k for k in rows[0]}
-    close_key = next((cols[k] for k in ("close", "c", "price", "last") if k in cols), None)
+    close_key = next((cols[k] for k in CLOSE_NAMES if k in cols), None)
     if close_key is None:
-        raise SystemExit(f"{path} has no close/price column (found: {list(rows[0])})")
+        raise SystemExit(
+            f"{path} has no column this recognises as the close price.\n"
+            f"  found      : {', '.join(rows[0])}\n"
+            f"  recognised : {', '.join(CLOSE_NAMES)}\n"
+            "Rename your price column to `close` and try again."
+        )
 
     def col(*names):
         key = next((cols[n] for n in names if n in cols), None)
         if key is None:
             return None
         try:
-            return np.array([float(r[key]) for r in rows])
+            return np.array([_number(r[key]) for r in rows])
         except (ValueError, TypeError):
             return None
 
@@ -126,8 +237,16 @@ def _load_csv(path: Path, symbol: str | None) -> Bars:
                 ts = np.array(parsed) if parsed else None
             break
 
+    try:
+        close = np.array([_number(r[close_key]) for r in rows])
+    except (ValueError, TypeError) as exc:
+        raise SystemExit(
+            f"{path}: could not read column {close_key!r} as numbers ({exc}).\n"
+            "Check for blank rows, a footer line, or a 'null' placeholder."
+        )
+
     return Bars(
-        close=np.array([float(r[close_key]) for r in rows]),
+        close=close,
         open=col("open", "o"), high=col("high", "h"), low=col("low", "l"),
         volume=col("volume", "vol", "v"), ts=ts,
         symbol=symbol or path.stem,
@@ -226,6 +345,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--demo", action="store_true",
                    help="score three example strategies offline and exit; needs no "
                         "file, no network and no data")
+    p.add_argument("--new", type=Path, metavar="FILE",
+                   help="write a working strategy template you can run immediately, "
+                        "then edit")
     p.add_argument("--verify", type=Path, metavar="FILE",
                    help="check an attestation and exit; exits non-zero if tampered")
     p.add_argument("--attest", nargs="?", const=True, default=None, metavar="FILE",
@@ -251,8 +373,11 @@ def main(argv: list[str] | None = None) -> int:
         return _demo()
     if args.verify:
         return _verify(args.verify)
+    if args.new:
+        return _write_template(args.new)
     if args.strategy is None:
-        p.error("need a strategy file, or --demo, or --verify FILE")
+        p.error("need a strategy file. Try `--demo` to see a verdict first, or "
+                "`--new mystrategy.py` to get a working one to edit")
 
     mod = _load_module(args.strategy)
     spec = PRESETS[args.market]
@@ -262,8 +387,16 @@ def main(argv: list[str] | None = None) -> int:
     elif args.symbol:
         from .data import GRANULARITY, load
         print(f"{DIM}fetching {args.symbol}…{RESET}", file=sys.stderr)
-        bars = load(args.symbol, asset_class=spec.asset_class,
-                    interval=args.interval, bars=args.bars)
+        try:
+            bars = load(args.symbol, asset_class=spec.asset_class,
+                        interval=args.interval, bars=args.bars)
+        except (RuntimeError, OSError) as exc:
+            # A rejected ticker or a dropped connection is not a bug in this program.
+            raise SystemExit(
+                f"\n{RED}{BOLD}Could not fetch {args.symbol}.{RESET}\n\n{exc}\n\n"
+                f"{DIM}--market {args.market} looks for a "
+                f"{'crypto product id like BTC-USD' if spec.asset_class == 'crypto' else 'stock ticker like AAPL'}"
+                f". Use --csv to score your own file instead.{RESET}\n")
         if spec.asset_class == "crypto" and args.interval in GRANULARITY:
             # The preset is written for hourly bars. Retime it to whatever was asked
             # for, so --interval does not silently invalidate every annualised number.
@@ -279,13 +412,26 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{DIM}{len(bars):,} bars of {bars.symbol} · {spec.name} · "
           f"{n:,} parameter combinations{RESET}", file=sys.stderr)
 
-    verdict = run(
-        mod.strategy, bars, spec, mod.GRID,
-        valid=getattr(mod, "valid", None),
-        n_permutations=args.permutations,
-        permutation_method=args.null,
-        progress=lambda s: print(f"{DIM}  {s}{RESET}", file=sys.stderr),
-    )
+    try:
+        verdict = run(
+            mod.strategy, bars, spec, mod.GRID,
+            valid=getattr(mod, "valid", None),
+            n_permutations=args.permutations,
+            permutation_method=args.null,
+            progress=lambda s: print(f"{DIM}  {s}{RESET}", file=sys.stderr),
+        )
+    except StrategyError as exc:
+        # A mistake in the user's strategy file is not a crash in this program, and
+        # printing a traceback tells them about our call stack instead of their bug.
+        raise SystemExit(f"\n{RED}{BOLD}Your strategy could not be run.{RESET}\n\n{exc}\n")
+    except ValueError as exc:
+        # sweep() raises these for conditions the user chose and can change: too few
+        # bars, a grid with no valid combinations, a grid over max_trials. Each
+        # already carries an explanation, so show it rather than a stack.
+        raise SystemExit(f"\n{RED}{BOLD}Cannot run this.{RESET}\n\n{exc}\n")
+
+    if (warning := verdict.meta.get("sweep_warning")):
+        print(f"\n{YELLOW}{BOLD}warning{RESET}  {warning}", file=sys.stderr)
 
     band = (GREEN if verdict.score >= 60 else YELLOW if verdict.score >= 40 else RED)
     print(f"\n{band}{BOLD}{verdict.score:.0f}/100  {verdict.label}{RESET}")
