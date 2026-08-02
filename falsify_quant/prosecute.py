@@ -579,6 +579,7 @@ def check_permutation(
     p0 = float(bars.close[0])
 
     null_best: list[float] = []
+    first_failure: str | None = None
     for _ in range(n_runs):
         if method == "iid":
             synth = rng.permutation(r)
@@ -592,17 +593,41 @@ def check_permutation(
 
         try:
             s = run_sweep(sweep_.strategy, synth_bars, sweep_.spec, sweep_.grid)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- one bad synthetic path is not fatal
+            if first_failure is None:
+                first_failure = f"{type(exc).__name__}: {exc}"
             continue
         alive = s.sharpes[~s.failed]
         if len(alive):
             null_best.append(float(np.max(alive)))
 
     if not null_best:
+        # Saying only "could not run" leaves the user to guess, which is the thing this
+        # project exists not to do. The cause is nearly always the same one: synthetic
+        # paths are manufactured from returns, so `with_close` gives them a close series
+        # and nothing else. A strategy reading bars.volume or bars.high works perfectly
+        # on the real series and raises on every null run -- and this check is one of the
+        # six that are weighted, so a silent 0.5 moves the score with no explanation.
+        # The nested failure is a whole multi-line diagnosis. The headline gets one
+        # sentence of it; the rest belongs in the advice, where there is room.
+        cause = ""
+        if first_failure:
+            root = [ln.strip() for ln in first_failure.splitlines() if ln.strip()][-1]
+            cause = f" Every synthetic run failed with {root}"
         return Finding(
             name="permutation", title="Search on noise", score=0.5,
-            headline="Permutation test could not run on this strategy.",
-            detail={"n_runs": 0},
+            headline="Permutation test could not run on this strategy." + cause,
+            detail={"n_runs": 0, "first_failure": first_failure},
+            advice=(
+                "Synthetic price paths carry a close series and nothing else: they are "
+                "built from permuted returns, and there is no honest way to manufacture "
+                "a matching high, low or volume to go with them. A strategy that reads "
+                "any of those works on your real data and raises on every null path, "
+                "which is what happened here. Express the entry rule in terms of "
+                "bars.close to get this check.\n\nThe failure was:\n" + first_failure
+                if first_failure else
+                "The sweep produced no scorable result on any synthetic path."
+            ),
         )
 
     null = np.asarray(null_best)

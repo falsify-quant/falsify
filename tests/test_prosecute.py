@@ -8,6 +8,8 @@ failure.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 import pytest
 
@@ -386,3 +388,165 @@ def test_prior_sharpes_pool_into_the_variance_too():
     assert tight.detail["n_trials"] == spread.detail["n_trials"]
     assert spread.detail["trial_sharpe_variance"] > tight.detail["trial_sharpe_variance"]
     assert spread.detail["deflated_benchmark_annual"] > tight.detail["deflated_benchmark_annual"]
+
+
+# ----------------------------------------------------------------------------------
+# When the permutation test cannot run, it has to say why
+#
+# Synthetic paths are built from permuted returns, so `with_close` gives them a close
+# series and nothing else -- there is no honest way to manufacture a matching high, low
+# or volume. A strategy reading any of those works perfectly on the real series and
+# raises on every null path. This is one of the six weighted checks, so it lands a 0.5
+# on the score, and it used to do that without saying anything at all.
+# ----------------------------------------------------------------------------------
+
+
+def _volume_reading_sweep():
+    from falsify_quant.harness import sweep as run_sweep
+    from falsify_quant.spec import PRESETS
+
+    n = 400
+    rng = np.random.default_rng(3)
+    close = 100.0 * np.cumprod(1.0 + np.concatenate([[0.0], rng.normal(0, 0.01, n - 1)]))
+    bars = Bars(close=close, open=close, high=close * 1.01, low=close * 0.99,
+                volume=np.full(n, 1e6), ts=1.7e9 + np.arange(n) * 86400.0)
+
+    def strategy(bars, fast=5):
+        # Perfectly reasonable, and unrunnable on a close-only synthetic path.
+        return np.where(bars.volume > 0, 1.0, 0.0)
+
+    return run_sweep(strategy, bars, PRESETS["equity"], {"fast": [5, 10]})
+
+
+def test_an_unrunnable_permutation_names_the_failure():
+    from falsify_quant.prosecute import check_permutation
+
+    f = check_permutation(_volume_reading_sweep(), n_runs=5, seed=0)
+
+    assert f.score == 0.5, "uncomputable is neither a pass nor a fail"
+    assert f.detail["n_runs"] == 0
+    assert f.detail["first_failure"], "the exception was thrown away"
+    assert "could not run" in f.headline
+    assert "failed with" in f.headline, "the headline has to carry the cause"
+
+
+def test_the_unrunnable_headline_stays_one_line():
+    """The nested failure is a multi-line diagnosis; the report prints headlines raw."""
+    from falsify_quant.prosecute import check_permutation
+
+    f = check_permutation(_volume_reading_sweep(), n_runs=5, seed=0)
+    assert "\n" not in f.headline
+
+
+def test_the_advice_points_at_the_actual_cause():
+    from falsify_quant.prosecute import check_permutation
+
+    f = check_permutation(_volume_reading_sweep(), n_runs=5, seed=0)
+    assert "bars.close" in f.advice
+    assert "volume" in f.advice
+
+
+# ----------------------------------------------------------------------------------
+# Calibration of the headline statistic
+#
+# Everything else in this project is downstream of this number. If the permutation
+# p-value is not roughly uniform when the data really is structureless, every verdict
+# is wrong in a way nothing downstream could detect -- the tool would be doing to its
+# users exactly what it exists to catch them doing.
+#
+# This is the cheap deterministic version and it only catches gross breakage. The real
+# evidence is a 1,500-trial run: chi-square against the discrete uniform gave p = 0.36
+# pooled (0.53, 0.83, 0.85 across three independent replications), and all three tail
+# rates contained their expected value inside exact binomial 95% intervals.
+#
+# Note the distribution is DISCRETE -- a permutation p-value with R runs can only take
+# the values k/(R+1). Testing it against a continuous uniform with a KS test rejects on
+# the step structure alone, which is a mistake worth not repeating.
+# ----------------------------------------------------------------------------------
+
+
+NULL_SERIES, NULL_RUNS = 60, 40
+
+
+@lru_cache(maxsize=None)
+def _null_p_values(n_series: int = NULL_SERIES, n_runs: int = NULL_RUNS) -> np.ndarray:
+    """p-values from searches run on price series that contain nothing.
+
+    Fixed seeds throughout, so this is deterministic: it either always passes or
+    always fails, and a stochastic assertion cannot flake into a red build. Cached
+    because it is 2,460 sweeps and three tests ask the same question of it.
+    """
+    from falsify_quant.harness import sweep as run_sweep
+    from falsify_quant.indicators import rolling_mean
+    from falsify_quant.prosecute import check_permutation
+    from falsify_quant.spec import PRESETS
+
+    def strategy(bars, fast=10, slow=50):
+        f = rolling_mean(bars.close, int(fast))
+        s = rolling_mean(bars.close, int(slow))
+        w = np.where(f > s, 1.0, -1.0)
+        w[np.isnan(f) | np.isnan(s)] = np.nan
+        return w
+
+    out = []
+    for i in range(n_series):
+        rng = np.random.default_rng(4242 + i)
+        n = 600
+        close = 100.0 * np.cumprod(
+            1.0 + np.concatenate([[0.0], rng.normal(0.0003, 0.011, n - 1)]))
+        bars = Bars(close=close, ts=1.6e9 + np.arange(n) * 86400.0, symbol="NOISE")
+        sw = run_sweep(strategy, bars, PRESETS["equity"], {"fast": [5, 10], "slow": [50]})
+        out.append(check_permutation(sw, n_runs=n_runs, seed=i).detail["p_value"])
+    return np.asarray(out)
+
+
+def test_the_permutation_p_value_is_not_systematically_wrong():
+    from scipy import stats
+
+    runs = NULL_RUNS                      # same call shape as the others, so the cache hits
+    p = _null_p_values()
+    k = np.rint(p * (runs + 1)).astype(int)
+    counts = np.bincount(k, minlength=runs + 2)[1:runs + 2]
+
+    assert stats.chisquare(counts).pvalue > 0.001, "p-values are not uniform on noise"
+    assert 0.35 < p.mean() < 0.65, f"mean p-value {p.mean():.3f} is off centre"
+
+
+def test_noise_is_not_called_significant_more_often_than_it_should_be():
+    """The dangerous direction. Conservative is survivable; anti-conservative is not.
+
+    A tool that declares structureless data significant too often is the thing it was
+    built to expose, and it would say so with a confident number.
+    """
+    p = _null_p_values()
+
+    assert (p <= 0.10).mean() < 0.30, "far too many false positives on pure noise"
+    assert (p <= 0.02).mean() < 0.15
+
+
+def test_the_p_values_actually_vary():
+    """Guards the degenerate pass: a constant p-value satisfies a mean check too."""
+    p = _null_p_values()
+
+    assert p.max() > 0.5, "nothing ever looked unremarkable, which cannot be right"
+    assert len(np.unique(p)) > 5, f"only {len(np.unique(p))} distinct p-values"
+
+
+def test_the_estimator_respects_its_own_floor():
+    """A permutation p-value can never be zero, and the floor is 1/(runs + 1).
+
+    This is the sharp test and the distributional ones above are not: writing
+    `beaten / len(null)` instead of `(1 + beaten) / (len(null) + 1)` is the classic
+    way to get this wrong, and it barely moves the histogram -- the loose bounds in
+    this section do not notice it at all. What it does do is let p reach exactly 0,
+    which claims the search beat every single null path and that no finite number of
+    permutations can ever establish. The floor is reported to the user as
+    `p_value_floor` for the same reason.
+    """
+    runs = NULL_RUNS
+    p = _null_p_values()
+    floor = 1.0 / (runs + 1)
+
+    assert p.min() > 0.0, "p = 0 claims certainty no permutation test can deliver"
+    assert p.min() >= floor - 1e-12, f"p = {p.min()} is below the floor {floor}"
+    assert p.max() <= 1.0
