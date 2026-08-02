@@ -482,6 +482,12 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
+    from .cli import _utf8_console
+
+    # A daemon that dies while printing an alert is the one failure a monitor cannot
+    # have, and the alert text is prose with dashes in it. See `_utf8_console`.
+    _utf8_console()
+
     p = argparse.ArgumentParser(
         prog="falsify-quant-watch",
         description="Keep running the live monitor and speak only when something changes.",

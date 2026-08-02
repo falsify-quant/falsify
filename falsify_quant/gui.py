@@ -407,6 +407,12 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import webbrowser
 
+    from .cli import _utf8_console
+
+    # Before the server starts: the line this would die on is the one telling the user
+    # not to expose the port, and it prints after the socket is already listening.
+    _utf8_console()
+
     p = argparse.ArgumentParser(
         prog="falsify-quant-gui",
         description="Run falsify from a local page in your browser.")
