@@ -42,6 +42,23 @@ def _get(url: str, timeout: int = 30) -> bytes:
         return resp.read()
 
 
+# Quote currencies the Exchange API treats as interchangeable with USD. It marks the
+# stablecoin-quoted books delisted and serves no history for them, so the request
+# succeeds and returns nothing -- which reads as "this pair does not exist" when the
+# fix is one character. Trading venues disagree with the data venue here: Coinbase
+# Advanced Trade quotes plenty of real books in USDC that Exchange will not serve.
+_USD_EQUIVALENT_QUOTES = ("-USDC", "-USDT", "-USDD", "-PYUSD")
+
+
+def _quote_hint(symbol: str) -> str:
+    for quote in _USD_EQUIVALENT_QUOTES:
+        if symbol.upper().endswith(quote):
+            return (f"\nThe public Coinbase Exchange API serves no history for "
+                    f"{quote.lstrip('-')}-quoted books -- it treats them as the same "
+                    f"market as USD. Try {symbol[: -len(quote)].upper()}-USD.")
+    return ""
+
+
 def load_crypto(
     symbol: str = "BTC-USD",
     *,
@@ -88,7 +105,10 @@ def load_crypto(
         time.sleep(pause)  # Coinbase public rate limit is ~10 req/s; stay well under
 
     if len(rows) < 50:
-        raise RuntimeError(f"only got {len(rows)} candles for {symbol}; nothing to test")
+        raise RuntimeError(
+            f"only got {len(rows)} candles for {symbol}; nothing to test."
+            + _quote_hint(symbol)
+        )
 
     ts = np.array(sorted(rows)[-bars:], dtype=np.float64)
     ohlcv = np.array([rows[int(t)] for t in ts], dtype=np.float64)
