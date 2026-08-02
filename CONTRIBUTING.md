@@ -23,7 +23,7 @@ cd falsify
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-pytest                # 57 unit tests: is the arithmetic right?
+pytest                # the unit suite: is the arithmetic right?
 python selftest.py    # 9 known-answer cases: does it measure anything?
 ```
 

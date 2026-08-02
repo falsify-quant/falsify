@@ -2,8 +2,8 @@
 
 Run it against a real market:
 
-    python -m falsify strategies/trend.py --symbol SPY     --market equity
-    python -m falsify strategies/trend.py --symbol BTC-USD --market crypto-perp --interval 1h
+    falsify-quant strategies/trend.py --symbol SPY     --market equity
+    falsify-quant strategies/trend.py --symbol BTC-USD --market crypto-perp --interval 1h
 """
 
 import numpy as np

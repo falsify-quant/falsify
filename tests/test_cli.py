@@ -58,6 +58,24 @@ def test_help_does_not_advertise_the_old_command_name(capsys):
     assert "falsify-quant --demo" in out
 
 
+def test_nothing_anyone_can_copy_still_names_the_old_module():
+    """The epilog was fixed and pinned; `strategies/trend.py` kept the dead command.
+
+    `python -m falsify` exits "No module named falsify". Guarding one file and not
+    the others left the canonical worked example telling people to run something
+    that cannot work, which is worse than the help text doing it -- an example is
+    what gets copied. So the check covers everything a reader can copy from.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sources = [*root.glob("*.md"), *(root / "strategies").glob("*.py"), root / "selftest.py"]
+
+    guilty = [p.name for p in sources
+              if p.exists() and "python -m falsify " in p.read_text(encoding="utf-8")]
+    assert not guilty, f"these still name the pre-rename module: {guilty}"
+
+
 # --------------------------------------------------------------------------------------
 # Reading price files from the places people actually get them.
 #
@@ -252,10 +270,16 @@ def test_a_missing_file_in_a_missing_directory_still_explains_itself(tmp_path):
 
 
 def test_a_directory_is_named_as_one(tmp_path):
+    """Asserts the whole phrase, not the word.
+
+    `tmp_path` is built from the test's own name, so a bare `"directory" in msg`
+    passes on the path alone -- including when the message is a permission error
+    from trying to open the directory as a file.
+    """
     with pytest.raises(SystemExit) as exc:
         _load(tmp_path)
 
-    assert "directory" in str(exc.value)
+    assert "is a directory, not a strategy file" in str(exc.value)
 
 
 def test_a_syntax_error_keeps_pythons_message_and_drops_the_frames(tmp_path):
@@ -295,3 +319,52 @@ def test_a_working_file_still_imports(tmp_path):
 
     mod = _load(p)
     assert callable(mod.strategy) and mod.GRID == {"fast": [5]}
+
+
+def test_a_missing_csv_is_not_a_traceback(tmp_path):
+    """`--csv` and the strategy argument are the two places a filename gets typed."""
+    from falsify_quant.cli import _load_csv
+
+    (tmp_path / "prices.csv").write_text("Date,Close\n2020-01-01,1\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        _load_csv(tmp_path / "prices.cvs", None)      # the transposition everyone makes
+
+    msg = str(exc.value)
+    assert "no file at" in msg
+    assert "prices.csv" in msg, "the file they meant is sitting right next to it"
+    assert "Traceback" not in msg
+
+
+def test_a_directory_passed_as_a_csv_is_named_as_one(tmp_path):
+    """Whole phrase again: `tmp_path` carries the word "directory" in it already."""
+    from falsify_quant.cli import _load_csv
+
+    with pytest.raises(SystemExit) as exc:
+        _load_csv(tmp_path, None)
+
+    assert "is a directory, not a CSV file" in str(exc.value)
+
+
+@pytest.mark.parametrize("header,rows", [
+    ("Date,Open,High,Low,Close,Adj Close,Volume",
+     ["2020-01-{:02d},10,11,9,10.5,10.5,1000".format(i) for i in range(1, 29)]),
+    ("Date,Close/Last,Volume,Open,High,Low",
+     ["01/{:02d}/2020,$1{,}0.50,\"1,000\",$10.00,$11.00,$9.00".replace("{,}", "")
+      .format(i) for i in range(1, 29)]),
+])
+def test_the_two_exports_people_actually_have_both_load(tmp_path, header, rows):
+    """Yahoo writes ISO dates, Nasdaq writes MM/DD/YYYY and $1,234.56.
+
+    Verified end to end against generated files in both shapes: same bar count, same
+    verdict. Losing somebody at "your column is spelled wrong" wastes the one moment
+    they were willing to try it.
+    """
+    from falsify_quant.cli import _load_csv
+
+    p = tmp_path / "x.csv"
+    p.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+
+    bars = _load_csv(p, None)
+    assert len(bars.close) == 28
+    assert bars.close[0] > 0

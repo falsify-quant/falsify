@@ -274,9 +274,25 @@ def _parse_dates(values: list[str]) -> np.ndarray | None:
 
 
 def _load_csv(path: Path, symbol: str | None) -> Bars:
-    """Read a CSV with a close column, and optionally date/open/high/low/volume."""
-    with open(path, newline="", encoding="utf-8-sig") as fh:
-        rows = list(csv.DictReader(fh))
+    """Read a CSV with a close column, and optionally date/open/high/low/volume.
+
+    The not-found cases are handled the same way `_load_module` handles them, and for
+    the same reason: `--csv` and the strategy argument are the two paths where a user
+    types a filename, so they are the two paths where a user mistypes a filename. This
+    one was still answering with a traceback after the other stopped.
+    """
+    if path.is_dir():
+        raise SystemExit(f"{path} is a directory, not a CSV file.")
+    if not path.exists():
+        near = sorted(p.name for p in path.parent.glob("*.csv")) if path.parent.is_dir() else []
+        found = f"\nCSV files in {path.parent}: {', '.join(near[:8])}" if near else ""
+        raise SystemExit(f"no file at {path}{found}")
+
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.DictReader(fh))
+    except OSError as exc:
+        raise SystemExit(f"could not read {path}: {exc}") from None
     if not rows:
         raise SystemExit(f"{path} is empty")
 
