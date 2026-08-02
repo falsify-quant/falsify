@@ -277,3 +277,72 @@ def test_max_drawdown_is_positive_fraction():
     rng = np.random.default_rng(14)
     dd = max_drawdown(rng.normal(0, 0.02, 1000))
     assert 0.0 < dd < 1.0
+
+
+# ----------------------------------------------------------------------------------
+# What deflation is actually worth, measured
+#
+# The existing test above checks one draw in the right direction. These two measure the
+# rate, because the claim the whole tool rests on is a rate: search hard enough and the
+# undeflated number blesses noise almost every time, and deflation has to take that away
+# without also taking away every real finding.
+#
+# One thing NOT to assert here: DSR is not a uniform p-value under the null and should
+# not be made into one. It is the probability the true Sharpe beats the expected maximum
+# of N worthless trials, and the observed maximum concentrates tightly around that
+# expectation -- so DSR concentrates near 0.5 rather than spreading over [0, 1]. Testing
+# it for uniformity rejects, and the rejection means nothing.
+# ----------------------------------------------------------------------------------
+
+
+def _best_of_n_noise(reps=60, T=800, N=60, edge=0.0, seed=0):
+    """(DSR, PSR) for the luckiest of N worthless strategies, `reps` times over.
+
+    Deterministic: fixed seed, so these assertions cannot flake.
+    """
+    rng = np.random.default_rng(seed)
+    dsr, psr = [], []
+    for _ in range(reps):
+        trials = rng.normal(0.0, 0.01, (T, N))
+        if edge:
+            trials[:, 0] += edge / np.sqrt(252.0) * 0.01
+        srs = sharpe_columns(trials)
+        best = int(np.argmax(srs))
+        dsr.append(deflated_sharpe(trials[:, best], N, float(np.var(srs, ddof=1)))[0])
+        psr.append(probabilistic_sharpe(trials[:, best]))
+    return np.asarray(dsr), np.asarray(psr)
+
+
+def test_deflation_removes_the_false_positives_the_search_manufactured():
+    """The central claim, as a rate rather than an anecdote.
+
+    Pick the best of 60 worthless strategies and the undeflated PSR calls it
+    significant nearly every time. That is not a subtle effect and it is exactly what
+    someone sweeping a grid does without noticing. Deflation has to take it away.
+    """
+    dsr, psr = _best_of_n_noise()
+
+    assert (psr > 0.95).mean() > 0.75, "the undeflated statistic should be fooled here"
+    assert (dsr > 0.95).mean() < 0.05, "deflation blessed pure noise"
+    assert 0.3 < dsr.mean() < 0.7, "the best of N should sit near the expected best"
+
+
+@pytest.mark.parametrize("edge,floor", [(0.0, 0.0), (1.5, 0.55), (3.0, 0.85)])
+def test_deflation_still_finds_a_real_edge(edge, floor):
+    """The other half. A test that only ever says no is not evidence of anything.
+
+    CONTRIBUTING asks for both directions on every check, and this is the direction
+    that is easy to lose: a deflation term that grew too fast would look excellent
+    against noise and quietly reject everything real.
+    """
+    dsr, _ = _best_of_n_noise(edge=edge, seed=1)
+
+    assert dsr.mean() >= floor, (
+        f"a true annual Sharpe of {edge} deflated to a mean DSR of {dsr.mean():.3f}"
+    )
+
+
+def test_dsr_rises_monotonically_with_the_size_of_the_real_edge():
+    means = [_best_of_n_noise(reps=40, edge=e, seed=2)[0].mean()
+             for e in (0.0, 1.0, 2.0, 3.0)]
+    assert means == sorted(means), f"not monotone in the true edge: {means}"
