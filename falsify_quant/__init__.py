@@ -48,7 +48,8 @@ from importlib import metadata as _metadata
 from typing import Callable, Mapping, Sequence
 
 from .attest import Attestation, attest, read_attestation, verify, write_attestation
-from .harness import Sweep, sweep
+from .harness import StrategyError, Sweep, sweep
+from .port import from_positions, from_signals
 from .prosecute import (
     Finding,
     check_causality,
@@ -74,6 +75,9 @@ except _metadata.PackageNotFoundError:  # running from a checkout that was never
     __version__ = "0.0.0+unknown"
 
 __all__ = [
+    "StrategyError",
+    "from_signals",
+    "from_positions",
     "run",
     "run_on_sweep",
     "run_universe",
@@ -128,7 +132,7 @@ def run(
     sw = sweep(strategy, bars, spec, grid, valid=valid)
 
     index = sw.index_of(params) if params else sw.best_index
-    return run_on_sweep(
+    verdict = run_on_sweep(
         sw,
         index,
         n_permutations=n_permutations,
@@ -138,6 +142,12 @@ def run(
         seed=seed,
         progress=progress,
     )
+    # Carry a partial-failure note up to whoever is displaying this. Cells that
+    # failed are excluded from the deflation, which is correct, but the user has to
+    # be told -- a grid that half-ran is not the grid they think they searched.
+    if (warning := sw.failure_warning()) is not None:
+        verdict.meta.setdefault("sweep_warning", warning)
+    return verdict
 
 
 def run_on_sweep(

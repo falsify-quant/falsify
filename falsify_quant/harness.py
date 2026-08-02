@@ -26,9 +26,110 @@ from .sim import simulate
 from .spec import Bars, MarketSpec, Strategy
 from .stats import sharpe_columns
 
-__all__ = ["Sweep", "sweep", "grid_size"]
+__all__ = ["Sweep", "StrategyError", "sweep", "grid_size"]
 
 ParamDict = dict[str, float]
+
+
+class StrategyError(Exception):
+    """The user's strategy could not be run, with an explanation of why.
+
+    Separate from ValueError so the CLI can print it as advice rather than as a
+    crash. Every message this carries names the actual cause and what to change.
+    """
+
+
+def _params_str(params: ParamDict) -> str:
+    return ", ".join(f"{k}={v!r}" for k, v in params.items()) or "(no parameters)"
+
+
+def _accepted_params(strategy) -> list[str] | None:
+    """Parameter names `strategy` accepts, or None if it cannot be inspected."""
+    try:
+        import inspect
+
+        sig = inspect.signature(strategy)
+    except (TypeError, ValueError):
+        return None
+    return [
+        p.name
+        for p in sig.parameters.values()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+    ]
+
+
+def _check_weights(w, n_bars: int) -> str | None:
+    """Why `w` is not a usable weight series, or None if it is fine.
+
+    Checked explicitly rather than left to fail somewhere downstream, because the
+    error the engine would raise on its own describes the engine's problem and not
+    the user's mistake.
+    """
+    if w is None:
+        return ("strategy() returned None -- did you forget to `return`?")
+    try:
+        arr = np.asarray(w, dtype=float)
+    except (TypeError, ValueError) as exc:
+        return (f"strategy() returned {type(w).__name__}, which is not a sequence of "
+                f"numbers ({exc}). Return one float per bar.")
+    if arr.ndim != 1:
+        return (f"strategy() returned an array with shape {arr.shape}. Return a flat "
+                "series of one weight per bar.")
+    if len(arr) != n_bars:
+        return (
+            f"strategy() returned {len(arr)} weights for {n_bars} bars.\n\n"
+            "Return one weight per bar, aligned to `bars`. If your indicator has a\n"
+            "warmup, pad the front with np.nan -- the engine reads NaN as flat --\n"
+            "rather than returning a shorter array."
+        )
+    if arr.size and np.all(np.isnan(arr)):
+        return ("strategy() returned all NaN, so the warmup never ends. Check that "
+                "your longest window is shorter than the data.")
+    return None
+
+
+def _diagnose(reason: str, params: ParamDict, strategy, grid) -> str:
+    """Turn one concrete failure into advice.
+
+    The old behaviour was a single message blaming the signature no matter what
+    actually went wrong, which misdirects three times out of four: a DataFrame-style
+    subscript, a GRID key that is not a parameter, a missing `return` and a
+    wrong-length array are four different mistakes with four different fixes.
+    """
+    hint = ""
+    low = reason.lower()
+
+    if "not subscriptable" in low:
+        hint = (
+            "\n`bars` is a Bars object, not a DataFrame. Use attribute access:\n\n"
+            "    bars.close   bars.open   bars.high   bars.low   bars.volume\n\n"
+            "Each is a plain numpy array, so pandas users can wrap it:\n"
+            "    c = pd.Series(bars.close)\n"
+        )
+    elif "unexpected keyword argument" in low:
+        accepted = _accepted_params(strategy)
+        lines = ["\nGRID has a key your strategy does not accept. Every GRID key must "
+                 "be a\nparameter name of strategy()."]
+        lines.append(f"\n    GRID keys        : {', '.join(grid) or '(none)'}")
+        if accepted is not None:
+            lines.append(f"    strategy accepts : {', '.join(accepted) or '(none)'}")
+            extra = [k for k in grid if k not in accepted]
+            if extra:
+                lines.append(f"\nNot accepted: {', '.join(extra)}. Either add "
+                             "them as parameters or drop them from GRID.")
+        hint = "\n".join(lines) + "\n"
+    elif "missing" in low and "positional argument" in low:
+        accepted = _accepted_params(strategy)
+        hint = (
+            "\nstrategy() has a parameter with no default that GRID does not supply.\n"
+            "Give every parameter a default, or add it to GRID.\n"
+            + (f"\n    strategy accepts : {', '.join(accepted)}\n" if accepted else "")
+        )
+
+    return (
+        f"The first failure was at {_params_str(params)}:\n\n"
+        f"    {reason}\n" + hint
+    )
 
 
 @dataclass
@@ -45,10 +146,33 @@ class Sweep:
     spec: MarketSpec
     strategy: Strategy = field(repr=False)
     grid: Mapping[str, Sequence[float]] = field(repr=False, default_factory=dict)
+    # (params, reason) of the first combination that failed, kept so a PARTIAL
+    # failure can be reported instead of passing silently. A grid where half the
+    # cells failed still deflates as if all of them ran, so silence here quietly
+    # corrupts the one number this tool exists to get right.
+    first_failure: tuple[ParamDict, str] | None = field(repr=False, default=None)
 
     @property
     def n_trials(self) -> int:
         return len(self.params)
+
+    @property
+    def n_failed(self) -> int:
+        return int(self.failed.sum())
+
+    def failure_warning(self) -> str | None:
+        """A note for the user when some -- but not all -- of the grid failed."""
+        n = self.n_failed
+        if n == 0 or self.first_failure is None:
+            return None
+        params, reason = self.first_failure
+        return (
+            f"{n} of {self.n_trials} parameter combinations failed and were skipped.\n"
+            f"  first: {_params_str(params)}\n"
+            f"  {reason.splitlines()[0]}\n"
+            "Those cells are excluded from the deflation, so the trial count reflects "
+            "what actually ran."
+        )
 
     @property
     def n_bars(self) -> int:
@@ -148,16 +272,36 @@ def sweep(
     churn = np.zeros(N, dtype=np.float64)
     failed = np.zeros(N, dtype=bool)
 
+    # Keep the FIRST real failure. Individual combinations are still allowed to fail
+    # without crashing the run -- one bad corner of the grid should not cost you the
+    # sweep -- but discarding the exception entirely is what left every mistake
+    # reporting the same misleading sentence.
+    first_failure: tuple[ParamDict, str] | None = None
+
+    def note(params: ParamDict, reason: str) -> None:
+        nonlocal first_failure
+        if first_failure is None:
+            first_failure = (params, reason)
+
     for i, params in enumerate(combos):
         try:
             w = strategy(bars, **params)
+            bad = _check_weights(w, T)
+            if bad is not None:
+                raise StrategyError(bad)
             res = simulate(bars, w, spec)
-        except Exception:
+        except StrategyError as exc:
             failed[i] = True
+            note(params, str(exc))
+            continue
+        except Exception as exc:
+            failed[i] = True
+            note(params, f"{type(exc).__name__}: {exc}")
             continue
 
         if not np.all(np.isfinite(res.net)):
             failed[i] = True
+            note(params, "the simulated net return contained inf or NaN")
             continue
 
         returns[:, i] = res.net.astype(np.float32)
@@ -168,7 +312,12 @@ def sweep(
             progress(i + 1, N)
 
     if failed.all():
-        raise RuntimeError("every parameter combination failed -- check the strategy signature")
+        params, reason = first_failure
+        raise StrategyError(
+            f"Every one of the {N} parameter combinations failed, so there is "
+            f"nothing to score.\n\n"
+            + _diagnose(reason, params, strategy, grid)
+        )
 
     sharpes = sharpe_columns(returns.astype(np.float64))
     sharpes[failed] = -np.inf
@@ -184,4 +333,5 @@ def sweep(
         spec=spec,
         strategy=strategy,
         grid=dict(grid),
+        first_failure=first_failure,
     )
